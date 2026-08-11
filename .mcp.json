@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "unity-mcp": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp"
+    },
+    "blender": {
+      "command": "C:\\Users\\PC\\AppData\\Roaming\\Python\\Python314\\Scripts\\uvx.exe",
+      "args": [
+        "ageless-blender-mcp"
+      ],
+      "env": {
+        "MCP_ADAPTER": "socket",
+        "MCP_SOCKET_HOST": "127.0.0.1",
+        "MCP_SOCKET_PORT": "9876"
+      },
+      "startup_timeout_sec": 120
+    }
+  }
+}
