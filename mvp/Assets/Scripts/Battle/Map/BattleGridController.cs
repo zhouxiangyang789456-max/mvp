@@ -1,11 +1,20 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle;
+using Mvp.Battle.Map.Generation;
+using Mvp.Shared;
 
 namespace Mvp.Battle.Map
 {
+    /// <summary>Where the battle grid takes its terrain from.</summary>
+    public enum BattleMapSource
+    {
+        TestMap,
+        Procedural
+    }
+
     /// <summary>
-    /// Owns the 12x10 logical grid and its visual: one flat quad per cell, no colliders
+    /// Owns the logical grid and its visual: one flat quad per cell, no colliders
     /// (perf rule). Provides the dual coordinate system (logical Vector2Int <-> world Vector3)
     /// and the occupancy/walkability queries used by pathfinding and movement.
     ///
@@ -19,6 +28,16 @@ namespace Mvp.Battle.Map
         [Header("Grid")]
         [SerializeField] int _width = TestBattleMapData.Width;
         [SerializeField] int _height = TestBattleMapData.Height;
+
+        [Header("Map Source")]
+        [Tooltip("TestMap always uses the hand-authored TestBattleMapData. Procedural runs the " +
+                 "generator, honoring BattleMapContext.PendingRequest when the level-select scene " +
+                 "queued one, otherwise building a request from the serialized settings below.")]
+        [SerializeField] BattleMapSource _mapSource = BattleMapSource.TestMap;
+        [SerializeField] MapGenerationSettings _proceduralSettings = new MapGenerationSettings();
+        [SerializeField] int _proceduralLevel = 1;
+        [Tooltip("Fallback level->map rule profile used when the level-select scene did not supply one via BattleStartContext.")]
+        [SerializeField] LevelMapGenerationProfile _proceduralProfile;
 
         TerrainType[,] _terrain;
         readonly HashSet<Vector2Int> _occupied = new HashSet<Vector2Int>();
@@ -35,8 +54,68 @@ namespace Mvp.Battle.Map
                 return;
             }
             Instance = this;
-            _terrain = TestBattleMapData.Create();
+            _terrain = ResolveMap();
             BuildVisual();
+        }
+
+        TerrainType[,] ResolveMap()
+        {
+            if (_mapSource == BattleMapSource.TestMap)
+            {
+                BattleMapContext.LastGeneratedData = null;
+                BattleMapContext.LastIdentity = null;
+                return TestBattleMapData.Create();
+            }
+
+            // 1) Explicit request queued by the level-select scene wins (e.g. a specific
+            //    reproduce request). One-shot so a stale request never leaks into a later battle.
+            if (BattleMapContext.PendingRequest != null)
+            {
+                var pending = BattleMapContext.PendingRequest;
+                BattleMapContext.PendingRequest = null;
+                return GenerateAndStore(pending);
+            }
+
+            // 2) Profile-driven: current level -> rule -> request. The pre-battle scene
+            //    supplies the profile; the battle scene serialized profile is a fallback.
+            var profile = BattleStartContext.MapProfile != null ? BattleStartContext.MapProfile : _proceduralProfile;
+            int level = BattleStartContext.LevelIndex > 0 ? BattleStartContext.LevelIndex : _proceduralLevel;
+            if (profile != null)
+                return GenerateAndStore(profile.BuildRequest(level));
+
+            // 3) Serialized inline settings fallback (direct scene open / editor preview).
+            return GenerateAndStore(BuildDefaultRequest());
+        }
+
+        TerrainType[,] GenerateAndStore(BattleMapRequest request)
+        {
+            int rosterCount = BattleStartContext.ExpeditionRoster != null
+                ? BattleStartContext.ExpeditionRoster.Commanders.Count
+                : 0;
+            request.PlayerDeploymentGroupCount = Mathf.Max(1, rosterCount);
+            var battle = ProceduralBattleMapProvider.CreateBattleMap(request,
+                out var data, out var identity);
+            BattleMapContext.LastGeneratedData = data;
+            BattleMapContext.LastIdentity = identity;
+
+            // The generated grid may differ from the serialized _width/_height (settings Win/H).
+            _width = battle.GetLength(1);
+            _height = battle.GetLength(0);
+            Debug.Log("[BattleGridController] map identity=" + identity);
+            return battle;
+        }
+
+        BattleMapRequest BuildDefaultRequest()
+        {
+            return new BattleMapRequest
+            {
+                ProfileId = "default",
+                ProfileVersion = 1,
+                RuleId = "default",
+                LevelIndex = _proceduralLevel,
+                SeedMode = SeedMode.LevelBased,
+                Settings = _proceduralSettings
+            };
         }
 
         void OnDestroy()
@@ -54,8 +133,9 @@ namespace Mvp.Battle.Map
             var baseGo = new GameObject("BaseGround");
             baseGo.transform.SetParent(rootGo.transform, false);
             baseGo.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
-            baseGo.transform.localScale = new Vector3(14f, 12f, 1f);
-            baseGo.transform.localPosition = new Vector3(5.5f, -0.03f, 4.5f);
+            baseGo.transform.localScale = new Vector3(_width + 2f, _height + 2f, 1f);
+            baseGo.transform.localPosition = new Vector3(
+                (_width - 1) * 0.5f, -0.03f, (_height - 1) * 0.5f);
             var baseSr = baseGo.AddComponent<SpriteRenderer>();
             baseSr.sprite = SharedSprites.White;
             baseSr.color = new Color(0.08f, 0.10f, 0.13f);
@@ -131,6 +211,11 @@ namespace Mvp.Battle.Map
         {
             if (!InBounds(c)) return TerrainType.Ocean;
             return _terrain[c.y, c.x];
+        }
+
+        public TerrainType[,] CreateTerrainSnapshot()
+        {
+            return (TerrainType[,])_terrain.Clone();
         }
 
         // ---- occupancy ----------------------------------------------------------------

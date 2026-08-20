@@ -27,8 +27,10 @@ namespace Mvp.Battle
         readonly int[] _gScore;
         readonly int[] _fScore;
         readonly int[] _cameFrom;
-        readonly byte[] _closed;
+        readonly int[] _visitedGeneration;
+        readonly int[] _closedGeneration;
         readonly MinHeap _open;
+        int _searchGeneration;
 
         public PathfindingService(IGridDataProvider grid)
         {
@@ -39,7 +41,8 @@ namespace Mvp.Battle
             _gScore = new int[count];
             _fScore = new int[count];
             _cameFrom = new int[count];
-            _closed = new byte[count];
+            _visitedGeneration = new int[count];
+            _closedGeneration = new int[count];
             _open = new MinHeap(Math.Max(16, count * 4));
         }
 
@@ -62,12 +65,10 @@ namespace Mvp.Battle
                 return true;
             }
 
-            Array.Clear(_gScore, 0, _gScore.Length);
-            Array.Clear(_fScore, 0, _fScore.Length);
-            Array.Clear(_cameFrom, 0, _cameFrom.Length);
-            Array.Clear(_closed, 0, _closed.Length);
+            int generation = NextSearchGeneration();
             _open.Clear();
 
+            _visitedGeneration[s] = generation;
             _gScore[s] = 0;
             _fScore[s] = Heuristic(s, e);
             _open.Push(s, _fScore[s]);
@@ -80,8 +81,8 @@ namespace Mvp.Battle
                     Reconstruct(s, e, output);
                     return true;
                 }
-                if (_closed[cur] != 0) continue;
-                _closed[cur] = 1;
+                if (_closedGeneration[cur] == generation) continue;
+                _closedGeneration[cur] = generation;
 
                 int cx = cur % _w;
                 int cy = cur / _w;
@@ -92,7 +93,7 @@ namespace Mvp.Battle
                     if (nx < 0 || ny < 0 || nx >= _w || ny >= _h) continue;
 
                     int n = ny * _w + nx;
-                    if (_closed[n] != 0) continue;
+                    if (_closedGeneration[n] == generation) continue;
                     if (n == s) continue;
                     if (n != e)
                     {
@@ -101,8 +102,9 @@ namespace Mvp.Battle
                     }
 
                     int ng = _gScore[cur] + DirCost[i];
-                    if (_gScore[n] == 0 || ng < _gScore[n])
+                    if (_visitedGeneration[n] != generation || ng < _gScore[n])
                     {
+                        _visitedGeneration[n] = generation;
                         _gScore[n] = ng;
                         _cameFrom[n] = cur;
                         _fScore[n] = ng + Heuristic(n, e);
@@ -112,6 +114,17 @@ namespace Mvp.Battle
             }
 
             return false;
+        }
+
+        int NextSearchGeneration()
+        {
+            if (_searchGeneration == int.MaxValue)
+            {
+                Array.Clear(_visitedGeneration, 0, _visitedGeneration.Length);
+                Array.Clear(_closedGeneration, 0, _closedGeneration.Length);
+                _searchGeneration = 0;
+            }
+            return ++_searchGeneration;
         }
 
         int Index(Vector2Int c) => c.y * _w + c.x;
@@ -129,15 +142,14 @@ namespace Mvp.Battle
 
         void Reconstruct(int s, int e, List<Vector2Int> output)
         {
-            var reversed = new List<Vector2Int>();
             int cur = e;
             while (cur != s)
             {
-                reversed.Add(new Vector2Int(cur % _w, cur / _w));
+                output.Add(new Vector2Int(cur % _w, cur / _w));
                 cur = _cameFrom[cur];
             }
-            reversed.Add(new Vector2Int(s % _w, s / _w));
-            for (int i = reversed.Count - 1; i >= 0; i--) output.Add(reversed[i]);
+            output.Add(new Vector2Int(s % _w, s / _w));
+            output.Reverse();
         }
 
         sealed class MinHeap

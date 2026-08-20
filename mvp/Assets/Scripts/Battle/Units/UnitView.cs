@@ -1,6 +1,8 @@
 using UnityEngine;
 using Mvp.Battle.Map;
 using Mvp.Shared;
+using Mvp.Battle.Commanders;
+using Mvp.Battle.Vision;
 
 namespace Mvp.Battle.Units
 {
@@ -27,6 +29,7 @@ namespace Mvp.Battle.Units
         Renderer _modelRenderer;
         Color _baseColor;
         float _flashTimer;
+        bool _removedFromBattle;
 
         public bool IsFlashing { get; private set; }
 
@@ -44,9 +47,11 @@ namespace Mvp.Battle.Units
             {
                 UnitSelectionController.Instance.Register(this);
             }
+            if (BattleSpatialIndex.Instance != null) BattleSpatialIndex.Instance.Register(this);
 
             ModelRoot = new GameObject("ModelRoot").transform;
             ModelRoot.SetParent(transform, false);
+            ModelRoot.localScale = Vector3.one * 0.72f;
 
             BuildPlaceholder(data.Definition.Type, data.Team);
 
@@ -55,7 +60,7 @@ namespace Mvp.Battle.Units
             // Clearance above the tallest placeholder body so the bar never clips
             // into it (the default capsule primitive is 2 units tall when unscaled).
             HealthAnchor.localPosition = new Vector3(0f, ModelRoot.childCount > 0
-                ? ModelRoot.GetChild(0).localPosition.y + 0.7f
+                ? 0.95f
                 : 0.9f, 0f);
         }
 
@@ -95,10 +100,7 @@ namespace Mvp.Battle.Units
 
         void OnDestroy()
         {
-            if (UnitSelectionController.Instance != null)
-            {
-                UnitSelectionController.Instance.Unregister(this);
-            }
+            RemoveFromBattleServices();
         }
 
         void BuildPlaceholder(UnitType type, TeamId team)
@@ -155,11 +157,19 @@ namespace Mvp.Battle.Units
         public void Die()
         {
             ReleaseHealthBar();
-            if (UnitSelectionController.Instance != null)
-            {
-                UnitSelectionController.Instance.Unregister(this);
-            }
+            RemoveFromBattleServices();
             if (gameObject != null) Destroy(gameObject);
+        }
+
+        void RemoveFromBattleServices()
+        {
+            if (_removedFromBattle) return;
+            _removedFromBattle = true;
+            if (BattleSpatialIndex.Instance != null) BattleSpatialIndex.Instance.Unregister(this);
+            if (CommanderGroupRegistry.Instance != null)
+                CommanderGroupRegistry.Instance.NotifyUnitRemoved(this);
+            if (UnitSelectionController.Instance != null)
+                UnitSelectionController.Instance.Unregister(this);
         }
 
         void Update()

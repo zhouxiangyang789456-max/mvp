@@ -8,6 +8,9 @@ namespace Mvp.Shared
         public string Id;
         public TeamId Team;
         public UnitDefinition Definition;
+        public string CommanderGroupId;
+        public int FormationSlotIndex;
+        public int SpawnOrder;
         public Vector2Int GridPosition;
         public Vector3 WorldPosition;
         public UnitCommand CurrentCommand = new UnitCommand();

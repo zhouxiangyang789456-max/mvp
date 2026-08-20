@@ -7,6 +7,7 @@ using Mvp.Battle.Formation;
 using Mvp.Battle.Map;
 using Mvp.CommanderSelect;
 using Mvp.Shared;
+using Mvp.Battle.Commanders;
 
 namespace Mvp.Battle.UI
 {
@@ -27,16 +28,25 @@ namespace Mvp.Battle.UI
 
         TextMeshProUGUI _nameText;
         TextMeshProUGUI _healthText;
+        GameObject _commanderPanel;
+        GameObject _cardBar;
+        GameObject _formationPanel;
+        Image _commanderPortrait;
         RectTransform _healthBarBg;
         RectTransform _healthBarFill;
         RectTransform[] _traitRoots = new RectTransform[4];
         Button _portraitButton;
         GameObject _startBattleGo;
         Button _startBattleButton;
+        GameObject _editFormationGo;
+        GameObject _confirmFormationGo;
+        GameObject _cancelFormationGo;
 
         readonly TextMeshProUGUI[] _cardNames = new TextMeshProUGUI[6];
         readonly TextMeshProUGUI[] _cardCounts = new TextMeshProUGUI[6];
         readonly Image[] _cardBadges = new Image[6];
+        readonly Button[] _cardButtons = new Button[6];
+        readonly int[] _cardCycleIndices = new int[6];
 
         readonly Button[] _formationButtons = new Button[3];
         readonly Image[] _formationImages = new Image[3];
@@ -53,6 +63,12 @@ namespace Mvp.Battle.UI
 
         void OnDestroy()
         {
+            if (CommanderGroupRegistry.Instance != null)
+            {
+                CommanderGroupRegistry.Instance.ActiveGroupChanged -= OnActiveGroupChanged;
+                CommanderGroupRegistry.Instance.CommanderInspected -= OnCommanderInspected;
+                CommanderGroupRegistry.Instance.CommanderInspectionClosed -= HideCommanderContext;
+            }
             if (Instance == this) Instance = null;
         }
 
@@ -65,16 +81,142 @@ namespace Mvp.Battle.UI
             BindCommanderPanel();
             BindCardBar();
             BindFormationButtons();
+            CreateCombatFormationControls();
             BindMiniMap();
             BindPortrait();
             CreateStartBattleButton();
 
             PopulateCommander(commander);
             PopulateCardBar(commander);
+            HideCommanderContext();
             RefreshFormationHighlight();
             RefreshPhaseUi();
 
             StartCoroutine(AutoDeploy());
+            StartCoroutine(BindCommanderGroups());
+        }
+
+        IEnumerator BindCommanderGroups()
+        {
+            for (int i = 0; i < 10 && CommanderGroupRegistry.Instance == null; i++)
+                yield return null;
+            var registry = CommanderGroupRegistry.Instance;
+            if (registry == null) yield break;
+            registry.ActiveGroupChanged -= OnActiveGroupChanged;
+            registry.ActiveGroupChanged += OnActiveGroupChanged;
+            registry.CommanderInspected -= OnCommanderInspected;
+            registry.CommanderInspected += OnCommanderInspected;
+            registry.CommanderInspectionClosed -= HideCommanderContext;
+            registry.CommanderInspectionClosed += HideCommanderContext;
+            OnActiveGroupChanged(registry.ActiveGroup);
+        }
+
+        void OnCommanderInspected(CommanderGroupRuntime group)
+        {
+            var existingEdit = FormationController.Instance;
+            if (existingEdit != null && existingEdit.IsCombatEditing)
+                existingEdit.CancelCombatEdit();
+            OnActiveGroupChanged(group);
+            SetCommanderContextVisible(true);
+            if (BattlePhaseState.Current == BattlePhase.Deployment)
+            {
+                var formation = FormationController.Instance;
+                if (formation != null)
+                {
+                    formation.ExitDeployMode();
+                    formation.EnterDeployMode();
+                }
+            }
+            RefreshCombatFormationControls();
+        }
+
+        void HideCommanderContext()
+        {
+            SetCommanderContextVisible(false);
+            var formation = FormationController.Instance;
+            if (formation != null)
+            {
+                formation.ExitDeployMode();
+                formation.CancelCombatEdit();
+            }
+            RefreshCombatFormationControls();
+        }
+
+        void SetCommanderContextVisible(bool visible)
+        {
+            if (_commanderPanel != null) _commanderPanel.SetActive(visible);
+            if (_cardBar != null) _cardBar.SetActive(visible);
+            if (_formationPanel != null) _formationPanel.SetActive(visible);
+        }
+
+        void CreateCombatFormationControls()
+        {
+            if (_formationPanel == null) return;
+            _editFormationGo = CreateFormationCommandButton("EditFormationBtn", "调整阵型", OnBeginCombatFormationEdit);
+            _confirmFormationGo = CreateFormationCommandButton("ConfirmFormationBtn", "确认重整", OnConfirmCombatFormationEdit);
+            _cancelFormationGo = CreateFormationCommandButton("CancelFormationBtn", "取消", OnCancelCombatFormationEdit);
+            RefreshCombatFormationControls();
+        }
+
+        GameObject CreateFormationCommandButton(string name, string text, UnityEngine.Events.UnityAction action)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            go.transform.SetParent(_formationPanel.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(116f, 48f);
+            var image = go.GetComponent<Image>();
+            image.color = new Color(0.05f, 0.20f, 0.24f, 0.96f);
+            var button = go.GetComponent<Button>();
+            button.targetGraphic = image;
+            button.onClick.AddListener(action);
+            var element = go.GetComponent<LayoutElement>();
+            element.preferredHeight = 48f;
+            var labelGo = new GameObject("Label", typeof(RectTransform));
+            labelGo.transform.SetParent(go.transform, false);
+            var label = labelGo.AddComponent<TextMeshProUGUI>();
+            label.font = ResolveFont(null);
+            label.fontSize = 18f;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = new Color(1f, 0.86f, 0.48f, 1f);
+            label.text = text;
+            var labelRt = labelGo.GetComponent<RectTransform>();
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            return go;
+        }
+
+        public void RefreshCombatFormationControls()
+        {
+            bool combat = BattlePhaseState.Current == BattlePhase.Combat;
+            var formation = FormationController.Instance;
+            bool editing = formation != null && formation.IsCombatEditing;
+            if (_editFormationGo != null) _editFormationGo.SetActive(combat && !editing);
+            if (_confirmFormationGo != null) _confirmFormationGo.SetActive(combat && editing);
+            if (_cancelFormationGo != null) _cancelFormationGo.SetActive(combat && editing);
+            for (int i = 0; i < _formationButtons.Length; i++)
+                if (_formationButtons[i] != null) _formationButtons[i].interactable = !combat || editing;
+            var panelRect = _formationPanel != null ? _formationPanel.GetComponent<RectTransform>() : null;
+            if (panelRect != null)
+                panelRect.sizeDelta = new Vector2(panelRect.sizeDelta.x, combat ? (editing ? 336f : 276f) : 220f);
+        }
+
+        void OnActiveGroupChanged(CommanderGroupRuntime group)
+        {
+            if (group == null || group.Definition == null)
+            {
+                HideCommanderContext();
+                return;
+            }
+            PopulateCommander(group.Definition);
+            PopulateCardBar(group.Definition);
+            var formation = FormationController.Instance;
+            if (formation != null) formation.SyncFormationContext(group.Formation);
+            RefreshFormationHighlight();
+
+            var status = BattleUiStatusText.Instance;
+            if (status != null) status.SetStatus("当前指挥官：" + group.Definition.DisplayName);
         }
 
         CommanderDefinition ResolveCommander()
@@ -94,8 +236,10 @@ namespace Mvp.Battle.UI
         {
             var panel = transform.Find("BattleUI/CommanderPanel");
             if (panel == null) return;
+            _commanderPanel = panel.gameObject;
 
             _nameText = panel.Find("Name")?.GetComponent<TextMeshProUGUI>();
+            _commanderPortrait = panel.Find("Portrait")?.GetComponent<Image>();
             _healthText = panel.Find("HealthBarBg/HealthText")?.GetComponent<TextMeshProUGUI>();
             _healthBarBg = panel.Find("HealthBarBg")?.GetComponent<RectTransform>();
             _healthBarFill = panel.Find("HealthBarBg/HealthBarFill")?.GetComponent<RectTransform>();
@@ -108,6 +252,8 @@ namespace Mvp.Battle.UI
 
         void BindCardBar()
         {
+            var cardBar = transform.Find("BattleUI/CardBar");
+            _cardBar = cardBar != null ? cardBar.gameObject : null;
             for (int i = 0; i < _cardNames.Length; i++)
             {
                 var slot = transform.Find("BattleUI/CardBar/CardSlot" + (i + 1));
@@ -115,11 +261,20 @@ namespace Mvp.Battle.UI
                 _cardNames[i] = slot.Find("Name")?.GetComponent<TextMeshProUGUI>();
                 _cardCounts[i] = slot.Find("Count")?.GetComponent<TextMeshProUGUI>();
                 _cardBadges[i] = slot.Find("Badge")?.GetComponent<Image>();
+                var image = slot.GetComponent<Image>();
+                var button = slot.GetComponent<Button>();
+                if (button == null) button = slot.gameObject.AddComponent<Button>();
+                if (image != null) button.targetGraphic = image;
+                int cardIndex = i;
+                button.onClick.AddListener(() => OnUnitCardClick(cardIndex));
+                _cardButtons[i] = button;
             }
         }
 
         void BindFormationButtons()
         {
+            var formationPanel = transform.Find("BattleUI/FormationPanel");
+            _formationPanel = formationPanel != null ? formationPanel.gameObject : null;
             for (int i = 0; i < _formationButtons.Length; i++)
             {
                 var root = transform.Find("BattleUI/FormationPanel/FormationBtn" + (i + 1));
@@ -251,6 +406,11 @@ namespace Mvp.Battle.UI
             if (c == null) return;
 
             if (_nameText != null) _nameText.text = c.DisplayName;
+            if (_commanderPortrait != null)
+            {
+                _commanderPortrait.sprite = Resources.Load<Sprite>(c.PortraitAssetId);
+                _commanderPortrait.preserveAspect = true;
+            }
             if (_healthText != null) _healthText.text = c.CurrentHealth + "/" + c.MaxHealth;
 
             if (_healthBarBg != null && _healthBarFill != null)
@@ -344,19 +504,101 @@ namespace Mvp.Battle.UI
             }
         }
 
+        void OnBeginCombatFormationEdit()
+        {
+            var registry = CommanderGroupRegistry.Instance;
+            var group = registry != null ? registry.ActiveGroup : null;
+            var formation = FormationController.Instance;
+            string reason = null;
+            if (formation == null || !formation.BeginCombatEdit(group, out reason))
+            {
+                var failedStatus = BattleUiStatusText.Instance;
+                if (failedStatus != null) failedStatus.SetStatus(reason ?? "当前无法调整阵型");
+                return;
+            }
+            var selection = Mvp.Battle.Units.UnitSelectionController.Instance;
+            if (selection != null) selection.ClearSelection();
+            RefreshCombatFormationControls();
+            var status = BattleUiStatusText.Instance;
+            if (status != null) status.SetStatus("阵型编辑：选择单位后点击 3×3 格，完成后确认重整");
+        }
+
+        void OnConfirmCombatFormationEdit()
+        {
+            var formation = FormationController.Instance;
+            string reason = null;
+            if (formation == null || !formation.ConfirmCombatEdit(out reason))
+            {
+                var failedStatus = BattleUiStatusText.Instance;
+                if (failedStatus != null) failedStatus.SetStatus(reason ?? "重整失败");
+                return;
+            }
+            var selection = Mvp.Battle.Units.UnitSelectionController.Instance;
+            if (selection != null) selection.ClearSelection();
+            RefreshFormationHighlight();
+            RefreshCombatFormationControls();
+            var status = BattleUiStatusText.Instance;
+            if (status != null) status.SetStatus("编队开始按新阵型重整");
+        }
+
+        void OnCancelCombatFormationEdit()
+        {
+            var formation = FormationController.Instance;
+            if (formation != null) formation.CancelCombatEdit();
+            var selection = Mvp.Battle.Units.UnitSelectionController.Instance;
+            if (selection != null) selection.ClearSelection();
+            RefreshCombatFormationControls();
+            var status = BattleUiStatusText.Instance;
+            if (status != null) status.SetStatus("已取消阵型修改");
+        }
+
+        void OnUnitCardClick(int cardIndex)
+        {
+            var registry = CommanderGroupRegistry.Instance;
+            var group = registry != null ? registry.ActiveGroup : null;
+            if (group == null || group.Definition == null ||
+                group.Definition.StartingUnits == null || cardIndex < 0 ||
+                cardIndex >= group.Definition.StartingUnits.Count) return;
+
+            UnitType type = group.Definition.StartingUnits[cardIndex].UnitType;
+            var matches = new System.Collections.Generic.List<Mvp.Battle.Units.UnitView>();
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member == null || member.Data == null || member.Data.State == UnitState.Dead ||
+                    member.Data.Definition == null || member.Data.Definition.Type != type) continue;
+                matches.Add(member);
+            }
+            if (matches.Count == 0) return;
+            int index = _cardCycleIndices[cardIndex] % matches.Count;
+            var selection = Mvp.Battle.Units.UnitSelectionController.Instance;
+            if (selection != null) selection.Select(matches[index]);
+            _cardCycleIndices[cardIndex] = (index + 1) % matches.Count;
+        }
+
         void OnStartBattle()
         {
             if (BattlePhaseState.Current == BattlePhase.Combat) return;
-            BattlePhaseState.StartCombat();
-
             var fc = FormationController.Instance;
+            string validationError;
+            if (fc != null && !fc.ValidateAllDeployments(out validationError))
+            {
+                var invalidStatus = BattleUiStatusText.Instance;
+                if (invalidStatus != null) invalidStatus.SetStatus(validationError);
+                return;
+            }
+            if (fc != null) fc.LockAllFormations();
+            BattlePhaseState.StartCombat();
+            if (Mvp.Battle.Outcome.BattleOutcomeController.Instance != null)
+                Mvp.Battle.Outcome.BattleOutcomeController.Instance.NotifyCombatStarted();
+
             if (fc != null) fc.ExitDeployMode();
 
             RefreshPhaseUi();
 
             var status = BattleUiStatusText.Instance;
             if (status != null)
-                status.SetStatus("战斗开始：点击己方单位 → 点击地面移动 / 点击敌人攻击");
+                status.SetStatus("战斗开始：点击指挥官头像或其单位选组，再点击地面移动 / 敌人攻击");
 
             Debug.Log("[BattleUI] Combat phase started.");
         }
@@ -365,6 +607,7 @@ namespace Mvp.Battle.UI
         {
             bool deploying = BattlePhaseState.Current == BattlePhase.Deployment;
             if (_startBattleGo != null) _startBattleGo.SetActive(deploying);
+            RefreshCombatFormationControls();
         }
 
         void RefreshFormationHighlight()
@@ -421,12 +664,10 @@ namespace Mvp.Battle.UI
             yield return null;
             yield return null;
             if (BattlePhaseState.Current != BattlePhase.Deployment) yield break;
-            var fc = FormationController.Instance;
-            if (fc != null) fc.EnterDeployMode();
 
             var status = BattleUiStatusText.Instance;
             if (status != null)
-                status.SetStatus("部署阶段：点击头像调整阵型，点击“开始战斗”进入战斗");
+                status.SetStatus("部署阶段：点击地图上的指挥官头像或旗下单位进行选择");
         }
 
         static TMP_FontAsset ResolveFont(TMP_FontAsset preferred)

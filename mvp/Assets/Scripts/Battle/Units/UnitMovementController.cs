@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Map;
 using Mvp.Shared;
+using Mvp.Battle.Vision;
+using Mvp.Battle.Outcome;
 
 namespace Mvp.Battle.Units
 {
@@ -49,6 +51,8 @@ namespace Mvp.Battle.Units
 
         void OnDestroy()
         {
+            var queue = PathRequestQueue.ExistingInstance;
+            if (queue != null) queue.Clear();
             if (Instance == this) Instance = null;
             ReleaseMarker();
         }
@@ -56,7 +60,9 @@ namespace Mvp.Battle.Units
         void Start()
         {
             var grid = BattleGridController.Instance;
-            if (grid != null) _pathfinder = new PathfindingService(grid);
+            if (grid == null) return;
+            _pathfinder = new PathfindingService(grid);
+            PathRequestQueue.Instance.Initialize(_pathfinder);
         }
 
         /// <summary>Shared A* instance (reused by the combat controller for pursuit).</summary>
@@ -65,6 +71,7 @@ namespace Mvp.Battle.Units
         /// <summary>Issues a move command to the target cell. Returns false on reject.</summary>
         public bool CommandMove(UnitView unit, Vector2Int targetCell)
         {
+            if (BattleSimulationState.IsFrozen) return false;
             var grid = BattleGridController.Instance;
             if (unit == null || unit.Data == null || grid == null) return false;
 
@@ -210,6 +217,8 @@ namespace Mvp.Battle.Units
                 data.GridPosition = cell;
                 var sel = UnitSelectionController.Instance;
                 if (sel != null) sel.UpdateCell(unit, old, cell);
+                var spatial = BattleSpatialIndex.Instance;
+                if (spatial != null) spatial.Move(unit, old, cell);
             }
 
             var p = grid.GridToWorld(cell);

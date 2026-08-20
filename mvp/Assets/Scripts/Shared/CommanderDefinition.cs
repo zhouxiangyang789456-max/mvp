@@ -9,6 +9,8 @@ namespace Mvp.Shared
         public string DisplayName;
         public int MaxHealth;
         public int CurrentHealth;
+        public string PortraitAssetId;
+        public string MapPortraitAssetId;
         public List<string> Traits = new List<string>();
         public List<StartingUnitEntry> StartingUnits = new List<StartingUnitEntry>();
     }

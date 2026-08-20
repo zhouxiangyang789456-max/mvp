@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Map;
 using Mvp.Shared;
+using Mvp.Battle.Outcome;
 
 namespace Mvp.Battle.Units
 {
@@ -62,8 +63,9 @@ namespace Mvp.Battle.Units
         }
 
         /// <summary>Issues an attack command. Returns false on reject.</summary>
-        public bool CommandAttack(UnitView attacker, UnitView target)
+        public bool CommandAttack(UnitView attacker, UnitView target, bool allowPursuit = true)
         {
+            if (BattleSimulationState.IsFrozen) return false;
             if (attacker == null || target == null || attacker.Data == null || target.Data == null)
                 return false;
             if (attacker == target) return false;
@@ -87,6 +89,7 @@ namespace Mvp.Battle.Units
             cs.Cells.Clear();
             cs.Index = 0;
             cs.LastTargetCell = target.Data.GridPosition;
+            cs.AllowPursuit = allowPursuit;
 
             var data = attacker.Data;
             data.CurrentCommand.Type = UnitCommandType.Attack;
@@ -156,6 +159,11 @@ namespace Mvp.Battle.Units
                 }
                 else
                 {
+                    if (!cs.AllowPursuit)
+                    {
+                        attacker.Data.State = UnitState.Idle;
+                        continue;
+                    }
                     if (attacker.Data.State != UnitState.Chasing)
                     {
                         attacker.Data.State = UnitState.Chasing;
@@ -181,6 +189,7 @@ namespace Mvp.Battle.Units
 
         void Fire(UnitView attacker, UnitView target)
         {
+            if (BattleSimulationState.IsFrozen) return;
             var atk = attacker.Data;
             var tgt = target.Data;
             int dmg = atk.Definition != null ? atk.Definition.AttackPower : 0;
@@ -375,6 +384,7 @@ namespace Mvp.Battle.Units
             public Vector2Int LastTargetCell;
             public readonly List<Vector2Int> Cells = new List<Vector2Int>();
             public int Index;
+            public bool AllowPursuit;
         }
     }
 }

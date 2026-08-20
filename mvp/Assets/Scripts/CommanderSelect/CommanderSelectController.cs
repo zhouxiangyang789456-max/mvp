@@ -4,6 +4,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using Mvp.Battle.Map.Generation;
 using Mvp.Shared;
 
 namespace Mvp.CommanderSelect
@@ -23,6 +24,7 @@ namespace Mvp.CommanderSelect
         readonly Image[] _cardImages = new Image[MaxCards];
         readonly TextMeshProUGUI[] _cardNames = new TextMeshProUGUI[MaxCards];
         readonly TextMeshProUGUI[] _cardCounts = new TextMeshProUGUI[MaxCards];
+        readonly Image[] _cardPortraits = new Image[MaxCards];
 
         TextMeshProUGUI _summaryTitle1, _summaryBody1;
         TextMeshProUGUI _summaryTitle2, _summaryBody2;
@@ -31,7 +33,14 @@ namespace Mvp.CommanderSelect
         Button _embarkButton;
         Button _returnButton;
 
-        int _selected = -1;
+        [Header("关卡地图")]
+        [Tooltip("当前进入的关卡号；BattleGridController 用它在 MapProfile 中查找规则。")]
+        [SerializeField] int _levelIndex = 1;
+        [Tooltip("关卡随机地图配置资产；为空时战斗场景回退到自身的 ProceduralSettings。")]
+        [SerializeField] LevelMapGenerationProfile _mapProfile;
+
+        readonly List<int> _selected = new List<int>();
+        int _focused = -1;
 
         void Start()
         {
@@ -74,6 +83,25 @@ namespace Mvp.CommanderSelect
 
                 var countTxt = card.Find("Count")?.GetComponent<TextMeshProUGUI>();
                 _cardCounts[i] = countTxt;
+
+                var placeholder = card.Find("Portrait") as RectTransform;
+                if (placeholder != null)
+                {
+                    placeholder.gameObject.SetActive(false);
+                    var artGo = new GameObject("PortraitArt", typeof(RectTransform), typeof(Image));
+                    artGo.transform.SetParent(card, false);
+                    artGo.transform.SetSiblingIndex(placeholder.GetSiblingIndex());
+                    var artRt = artGo.GetComponent<RectTransform>();
+                    artRt.anchorMin = placeholder.anchorMin;
+                    artRt.anchorMax = placeholder.anchorMax;
+                    artRt.pivot = placeholder.pivot;
+                    artRt.anchoredPosition = placeholder.anchoredPosition;
+                    artRt.sizeDelta = placeholder.sizeDelta;
+                    var art = artGo.GetComponent<Image>();
+                    art.preserveAspect = true;
+                    art.raycastTarget = false;
+                    _cardPortraits[i] = art;
+                }
             }
         }
 
@@ -126,9 +154,18 @@ namespace Mvp.CommanderSelect
                     _cardNames[i].color = has ? new Color(1f, 0.88f, 0.5f) : new Color(0.8f, 0.8f, 0.8f);
                 }
                 if (_cardCounts[i] != null)
-                    _cardCounts[i].text = has ? (i + 1).ToString() : "—";
+                {
+                    int order = _selected.IndexOf(i);
+                    _cardCounts[i].text = !has ? "—" : order >= 0 ? (order + 1).ToString() : "+";
+                }
 
                 if (_cardButtons[i] != null) _cardButtons[i].interactable = has;
+                if (_cardPortraits[i] != null)
+                {
+                    _cardPortraits[i].sprite = has
+                        ? Resources.Load<Sprite>(def.PortraitAssetId) : null;
+                    _cardPortraits[i].color = has ? Color.white : new Color(1f, 1f, 1f, 0f);
+                }
                 if (_cardImages[i] != null) ApplyCardTint(i);
             }
         }
@@ -142,7 +179,7 @@ namespace Mvp.CommanderSelect
             {
                 img.color = new Color(1f, 1f, 1f, 0.35f);
             }
-            else if (i == _selected)
+            else if (_selected.Contains(i))
             {
                 img.color = new Color(1f, 0.94f, 0.72f, 1f);
             }
@@ -155,7 +192,9 @@ namespace Mvp.CommanderSelect
         void OnCardClick(int index)
         {
             if (index >= _commanders.Count) return;
-            _selected = index;
+            _focused = index;
+            if (_selected.Contains(index)) _selected.Remove(index);
+            else _selected.Add(index);
             RefreshCards();
             ShowCommander(_commanders[index]);
             UpdateEmbarkState();
@@ -248,7 +287,7 @@ namespace Mvp.CommanderSelect
         void UpdateEmbarkState()
         {
             if (_embarkButton == null) return;
-            bool ready = _selected >= 0 && _selected < _commanders.Count;
+            bool ready = _selected.Count > 0;
             _embarkButton.interactable = ready;
             var label = _embarkButton.transform.Find("Label")?.GetComponent<TextMeshProUGUI>();
             if (label != null)
@@ -259,9 +298,28 @@ namespace Mvp.CommanderSelect
 
         void OnEmbark()
         {
-            if (_selected < 0 || _selected >= _commanders.Count) return;
-            BattleStartContext.SelectedCommander = _commanders[_selected];
-            Debug.Log("[CommanderSelect] Embark with " + BattleStartContext.SelectedCommander.DisplayName);
+            if (_selected.Count == 0) return;
+            var roster = new ExpeditionRosterSnapshot();
+            for (int i = 0; i < _selected.Count; i++)
+            {
+                int commanderIndex = _selected[i];
+                if (commanderIndex < 0 || commanderIndex >= _commanders.Count) continue;
+                roster.Commanders.Add(ExpeditionCommanderEntry.FromDefinition(
+                    _commanders[commanderIndex], roster.Commanders.Count));
+            }
+            if (roster.IsEmpty) return;
+
+            BattleStartContext.ExpeditionRoster = roster;
+            BattleStartContext.SelectedCommander = _commanders[_selected[0]];
+            BattleStartContext.LevelIndex = Mathf.Max(1, _levelIndex);
+            BattleStartContext.MapProfile = _mapProfile;
+            if (_mapProfile != null)
+            {
+                var rule = _mapProfile.FindRule(BattleStartContext.LevelIndex);
+                Debug.Log("[CommanderSelect] Embark level=" + BattleStartContext.LevelIndex
+                    + " rule=" + (rule != null ? (rule.DisplayName ?? rule.RuleId) : "(fallback)"));
+            }
+            Debug.Log("[CommanderSelect] Embark with " + roster.Commanders.Count + " commander group(s).");
             SceneManager.LoadScene(SceneToLoad);
         }
 

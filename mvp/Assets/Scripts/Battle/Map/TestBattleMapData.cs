@@ -1,30 +1,34 @@
 namespace Mvp.Battle.Map
 {
     /// <summary>
-    /// Hand-written 12x10 test map matching the reference layout: rear hills/mountains/
+    /// Hand-written 16x14 test map matching the reference layout: rear hills/mountains/
     /// snow, center plains, left forest, front desert/shallow water, outer ocean edges.
     /// Rows are indexed [z][x] with z=0 at the rear (top of the iso view) and z=9 at the
     /// front (bottom of the iso view).
     /// </summary>
     public static class TestBattleMapData
     {
-        public const int Width = 12;
-        public const int Height = 10;
+        public const int Width = 16;
+        public const int Height = 14;
 
         // Rows are mirrored on X so the forest sits on the screen-LEFT and the ocean
         // column on the screen-RIGHT when viewed by the battle camera (yaw -135).
         static readonly string[] Rows =
         {
-            "OOOSSSSSSOOO", // z=0 rear: snow, ocean corners
-            "OOSSMMMMSSSO",
-            "OOSMMMMMMMSO",
-            "OOHMMMMMMHHOO",
-            "OOHHMMMMHHHO",
-            "OOHFHHHHHFHO",
-            "OOFFFPPPFFFO",
-            "WFFDDPPDDFFW",
-            "WWWDDDDDDWWW",
-            "OOOWWWWWWOOO", // z=9 front: water, desert behind
+            "OOOOSSSSSSSSOOOO",
+            "OOOSSSMMMMSSSOOO",
+            "OOSSSMMMMMMSSSOO",
+            "OOHHMMMMMMMMHHOO",
+            "OOHHHMMMMMMHHHOO",
+            "OOHHHHMMMMHHHHOO",
+            "OOFFFHHPPHHFFFOO",
+            "OFFFPPPPPPPPFFFO",
+            "OFFFPPPPPPPPFFFO",
+            "OFFFFPPPPPPFFFFO",
+            "OFFFDDPPPPDDFFFO",
+            "OWFFDDDDDDDDFFWO",
+            "OWWWDDDDDDDDWWWO",
+            "OOOOWWWWWWWWOOOO",
         };
 
         public static TerrainType[,] Create()

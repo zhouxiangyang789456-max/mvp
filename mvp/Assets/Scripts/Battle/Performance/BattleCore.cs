@@ -1,4 +1,8 @@
 using UnityEngine;
+using Mvp.Battle.Commanders;
+using Mvp.Battle.Vision;
+using Mvp.Battle.AI;
+using Mvp.Battle.Outcome;
 
 namespace Mvp.Battle
 {
@@ -22,6 +26,14 @@ namespace Mvp.Battle
             var ui = go.AddComponent<UiPool>();
             go.AddComponent<PathRequestQueue>();
             go.AddComponent<UnitHealthBarManager>();
+            go.AddComponent<CommanderGroupRegistry>();
+            go.AddComponent<FormationReservationService>();
+            go.AddComponent<BattleSpatialIndex>();
+            go.AddComponent<BattleVisionService>();
+            go.AddComponent<CommanderGroupCommandController>();
+            go.AddComponent<EnemyGroupAiController>();
+            go.AddComponent<BattleOutcomeController>();
+            go.AddComponent<BattleGmController>();
             effects.RegisterDefaultEffects();
             ui.RegisterDefaultUi();
             _root = go;

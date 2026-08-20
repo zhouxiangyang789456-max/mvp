@@ -8,6 +8,8 @@ namespace Mvp.Battle.Formation
         /// <summary>横向: units line up in a row for a frontal spread.</summary>
         Horizontal,
         /// <summary>方形: units fill a compact rectangle.</summary>
-        Square
+        Square,
+        /// <summary>自定义: units keep their player-assigned positions in the 3x3 grid.</summary>
+        Custom
     }
 }

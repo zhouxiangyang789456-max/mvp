@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using Mvp.Battle.Map;
 using Mvp.Shared;
+using Mvp.Battle.Commanders;
 
 namespace Mvp.Battle.Units
 {
@@ -48,12 +49,31 @@ namespace Mvp.Battle.Units
         {
             if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
             {
+                var formation = Mvp.Battle.Formation.FormationController.Instance;
+                if (formation != null && formation.IsCombatEditing)
+                {
+                    formation.CancelCombatEdit();
+                    ClearSelection();
+                    var battleUi = Mvp.Battle.UI.BattleUiController.Instance;
+                    if (battleUi != null) battleUi.RefreshCombatFormationControls();
+                    return;
+                }
                 ClearSelection();
+                if (CommanderGroupRegistry.Instance != null)
+                    CommanderGroupRegistry.Instance.CloseCommanderInspection();
                 return;
             }
 
             if (!Input.GetMouseButtonDown(0)) return;
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
+
+            var groups = CommanderGroupRegistry.Instance;
+            if (groups != null && groups.TryPickMarker(Input.mousePosition))
+            {
+                Selected = null;
+                ReleaseRing();
+                return;
+            }
 
             var cam = Camera.main;
             var grid = BattleGridController.Instance;
@@ -109,6 +129,7 @@ namespace Mvp.Battle.Units
         {
             var formation = Mvp.Battle.Formation.FormationController.Instance;
             bool deploying = formation != null && formation.IsDeploying;
+            bool combatEditing = formation != null && formation.IsCombatEditing;
 
             var unit = FindAtCell(cell);
 
@@ -116,19 +137,32 @@ namespace Mvp.Battle.Units
             {
                 if (unit.Data.Team == TeamId.Player && unit.Data.State != UnitState.Dead)
                 {
+                    if (combatEditing && Selected != null && Selected != unit &&
+                        Selected.Data.CommanderGroupId == unit.Data.CommanderGroupId)
+                    {
+                        formation.TryEditCombatSlot(Selected, cell);
+                        return;
+                    }
+                    if (deploying && Selected != null && Selected != unit &&
+                        Selected.Data.CommanderGroupId == unit.Data.CommanderGroupId)
+                    {
+                        formation.TryPlace(Selected, cell);
+                        return;
+                    }
                     Select(unit);
                 }
-                else if (deploying)
+                else if (deploying || combatEditing)
                 {
-                    // Deploy mode ignores enemy clicks (only placement / selection apply).
+                    // Formation editing ignores enemy clicks; only slot edits apply.
                 }
                 else
                 {
-                    // Enemy click: with a selected player unit, issue an attack command.
-                    if (Selected != null)
+                    var group = CommanderGroupRegistry.Instance != null
+                        ? CommanderGroupRegistry.Instance.ActiveGroup : null;
+                    if (group != null)
                     {
-                        var combat = UnitCombatController.Instance;
-                        if (combat != null) combat.CommandAttack(Selected, unit);
+                        var commands = CommanderGroupCommandController.Instance;
+                        if (commands != null) commands.CommandAttack(group, unit);
                     }
                     else
                     {
@@ -139,17 +173,23 @@ namespace Mvp.Battle.Units
             }
 
             // Ground click.
-            if (deploying && Selected != null)
+            var activeGroup = CommanderGroupRegistry.Instance != null
+                ? CommanderGroupRegistry.Instance.ActiveGroup : null;
+            if (combatEditing && activeGroup != null)
             {
-                // Deploy mode: place the selected unit onto a range cell.
-                formation.TryPlace(Selected, cell);
+                if (Selected != null) formation.TryEditCombatSlot(Selected, cell);
+                return;
+            }
+            if (deploying && activeGroup != null)
+            {
+                if (Selected != null) formation.TryPlace(Selected, cell);
                 return;
             }
 
-            if (Selected != null)
+            if (activeGroup != null)
             {
-                var move = UnitMovementController.Instance;
-                if (move != null) move.CommandMove(Selected, cell);
+                var commands = CommanderGroupCommandController.Instance;
+                if (commands != null) commands.CommandMove(activeGroup, cell);
             }
             else
             {
@@ -163,9 +203,13 @@ namespace Mvp.Battle.Units
             if (unit.Data.Team != TeamId.Player) return false;
             if (unit.Data.State == UnitState.Dead) return false;
 
-            if (Selected == unit) return true;
-
-            ClearSelection();
+            var registry = CommanderGroupRegistry.Instance;
+            var group = registry != null ? registry.Find(unit) : null;
+            if (group == null) return false;
+            var formation = Mvp.Battle.Formation.FormationController.Instance;
+            bool editingSameGroup = formation != null && formation.IsCombatEditing &&
+                registry.ActiveGroup == group;
+            if (!editingSameGroup && !registry.Inspect(group)) return false;
             Selected = unit;
             ShowRing(unit);
             return true;
@@ -208,6 +252,18 @@ namespace Mvp.Battle.Units
             var pool = UiPool.Instance;
             if (pool != null) pool.Release(_selectionRing);
             _selectionRing = null;
+        }
+
+        static UnitView FirstAlive(CommanderGroupRuntime group)
+        {
+            if (group == null) return null;
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member != null && member.Data != null && member.Data.State != UnitState.Dead)
+                    return member;
+            }
+            return null;
         }
     }
 }

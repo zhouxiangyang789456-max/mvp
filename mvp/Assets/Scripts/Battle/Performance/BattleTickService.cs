@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using Mvp.Battle.Outcome;
 
 namespace Mvp.Battle
 {
@@ -50,6 +51,7 @@ namespace Mvp.Battle
 
         void Update()
         {
+            if (BattleSimulationState.IsFrozen) return;
             FastTick?.Invoke();
 
             _mediumTimer += Time.deltaTime;

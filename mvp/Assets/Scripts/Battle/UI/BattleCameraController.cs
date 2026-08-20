@@ -25,8 +25,14 @@ namespace Mvp.Battle.UI
 
         [Header("Zoom")]
         [SerializeField] float _zoomStep = 0.12f;
-        [SerializeField] float _minDistance = 4f;
-        [SerializeField] float _maxDistance = 20f;
+        [SerializeField] float _minOrthoSize = 4.5f;
+        [SerializeField] float _maxOrthoSize = 12f;
+        [SerializeField] float _initialOrthoSize = 4.5f;
+
+        [Header("Fit to Map")]
+        [Tooltip("On start, set the orthographic size so the whole grid is visible (overrides _initialOrthoSize).")]
+        [SerializeField] bool _fitToMapOnStart = false;
+        [SerializeField] float _fitPadding = 2f;
 
         [Header("Bounds")]
         [Tooltip("How far the ground focus may leave the grid before clamping.")]
@@ -58,9 +64,30 @@ namespace Mvp.Battle.UI
         void Start()
         {
             _viewDir = transform.forward;
-            _focus = CameraGround(transform.position, transform.forward);
+            var grid = BattleGridController.Instance;
+            _focus = grid != null
+                ? grid.GridToWorld(new Vector2Int((grid.Width - 1) / 2, (grid.Height - 1) / 2))
+                : CameraGround(transform.position, transform.forward);
             _distance = Mathf.Max(0.1f, Vector3.Distance(transform.position, _focus));
+            if (_cam != null && _cam.orthographic)
+            {
+                _cam.orthographicSize = _fitToMapOnStart && grid != null
+                    ? FitOrthoSize(grid.Width, grid.Height)
+                    : Mathf.Clamp(_initialOrthoSize, _minOrthoSize, _maxOrthoSize);
+            }
             Apply();
+        }
+
+        /// <summary>
+        /// Smallest orthographic size that shows the whole grid on screen. Height-limited on wide
+        /// aspect ratios, width-limited on narrow ones; clamped to the zoom range.
+        /// </summary>
+        float FitOrthoSize(int width, int height)
+        {
+            float aspect = _cam != null ? _cam.aspect : 16f / 9f;
+            float neededHeight = (height + _fitPadding) * 0.5f;
+            float neededWidth = (width + _fitPadding) * 0.5f / aspect;
+            return Mathf.Clamp(Mathf.Max(neededHeight, neededWidth), _minOrthoSize, _maxOrthoSize);
         }
 
         void Update()
@@ -107,7 +134,8 @@ namespace Mvp.Battle.UI
 
             Vector3 right = transform.right; right.y = 0f; right.Normalize();
             Vector3 fwd = transform.forward; fwd.y = 0f; fwd.Normalize();
-            float speed = _keyboardPanSpeed * (_distance / 10f);
+            float zoomScale = _cam.orthographic ? _cam.orthographicSize / 8f : _distance / 10f;
+            float speed = _keyboardPanSpeed * zoomScale;
             _focus += (right * h + fwd * v) * speed * Time.deltaTime;
             ClampFocus();
             Apply();
@@ -119,16 +147,28 @@ namespace Mvp.Battle.UI
         {
             float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (Mathf.Abs(scroll) < 0.001f) return;
-            _distance *= (1f - scroll * _zoomStep);
-            _distance = Mathf.Clamp(_distance, _minDistance, _maxDistance);
+            if (_cam.orthographic)
+                _cam.orthographicSize = Mathf.Clamp(
+                    _cam.orthographicSize * (1f - scroll * _zoomStep), _minOrthoSize, _maxOrthoSize);
+            else
+            {
+                _distance *= (1f - scroll * _zoomStep);
+                _distance = Mathf.Clamp(_distance, _minOrthoSize, _maxOrthoSize);
+            }
             Apply();
         }
 
         /// <summary>Zooms by a signed step (-1 in, +1 out); used by the minimap zoom button.</summary>
         public void ZoomBy(int dir)
         {
-            _distance *= (1f + dir * _zoomStep);
-            _distance = Mathf.Clamp(_distance, _minDistance, _maxDistance);
+            if (_cam.orthographic)
+                _cam.orthographicSize = Mathf.Clamp(
+                    _cam.orthographicSize * (1f + dir * _zoomStep), _minOrthoSize, _maxOrthoSize);
+            else
+            {
+                _distance *= (1f + dir * _zoomStep);
+                _distance = Mathf.Clamp(_distance, _minOrthoSize, _maxOrthoSize);
+            }
             Apply();
         }
 
