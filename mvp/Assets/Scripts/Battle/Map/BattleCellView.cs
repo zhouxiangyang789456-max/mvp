@@ -3,9 +3,8 @@ using UnityEngine;
 namespace Mvp.Battle.Map
 {
     /// <summary>
-    /// Visual for one terrain cell: a flat quad lying on the ground (no collider,
-    /// per the performance rules). Tinted by terrain color; raised slightly for
-    /// hills/mountains so the iso camera reads pseudo-3D depth.
+    /// Visual for one terrain cell. Uses a camera-facing isometric terrain sprite
+    /// when available and falls back to the original tinted ground quad.
     /// </summary>
     public sealed class BattleCellView : MonoBehaviour
     {
@@ -13,38 +12,46 @@ namespace Mvp.Battle.Map
         public TerrainType Terrain { get; private set; }
 
         SpriteRenderer _renderer;
+        SpriteRenderer _underlayRenderer;
 
         public void Setup(Vector2Int grid, TerrainType terrain)
         {
             GridPosition = grid;
             Terrain = terrain;
 
-            // Lie flat, facing up so the iso camera sees the tile.
-            transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
-
             if (_renderer == null) _renderer = gameObject.AddComponent<SpriteRenderer>();
-            _renderer.sprite = Mvp.Battle.SharedSprites.White;
-            _renderer.color = TerrainCatalog.GetColor(terrain);
+            Sprite terrainSprite = TerrainVisualCatalog.GetSprite(terrain);
+            if (terrainSprite != null)
+            {
+                _renderer.sprite = terrainSprite;
+                _renderer.color = Color.white;
+                var camera = Camera.main;
+                transform.rotation = camera != null ? camera.transform.rotation : Quaternion.identity;
+                transform.localScale = Vector3.one * TerrainVisualCatalog.GetScale(terrain);
+
+                if (TerrainVisualCatalog.NeedsPlainUnderlay(terrain))
+                {
+                    var underlay = new GameObject("TerrainUnderlay");
+                    underlay.transform.SetParent(transform, false);
+                    _underlayRenderer = underlay.AddComponent<SpriteRenderer>();
+                    _underlayRenderer.sprite = TerrainVisualCatalog.GetSprite(TerrainType.Plain);
+                    _underlayRenderer.color = Color.white;
+                    _underlayRenderer.sortingOrder = (grid.x + grid.y) * 2;
+                }
+            }
+            else
+            {
+                transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
+                _renderer.sprite = Mvp.Battle.SharedSprites.White;
+                _renderer.color = TerrainCatalog.GetColor(terrain);
+                transform.localScale = new Vector3(0.98f, 0.98f, 1f);
+            }
             // Explicit depth order (higher = drawn on top). The iso camera sees cells
             // with larger x+z as "in front", so those render over the rear tiles.
-            _renderer.sortingOrder = grid.x + grid.y;
+            _renderer.sortingOrder = (grid.x + grid.y) * 2 + 1;
 
-            // Small inset creates a dark grid line between tiles (the base ground shows through).
-            transform.localScale = new Vector3(0.98f, 0.98f, 1f);
-
-            // Pseudo-3D depth for terrain, matching the doc's rear hills/mountains/snow.
-            transform.position = new Vector3(transform.position.x, GetElevation(terrain), transform.position.z);
-        }
-
-        static float GetElevation(TerrainType t)
-        {
-            switch (t)
-            {
-                case TerrainType.Hill: return 0.04f;
-                case TerrainType.Mountain: return 0.08f;
-                case TerrainType.SnowMountain: return 0.12f;
-                default: return 0f;
-            }
+            transform.position = new Vector3(transform.position.x,
+                TerrainCatalog.GetElevation(terrain), transform.position.z);
         }
     }
 }
