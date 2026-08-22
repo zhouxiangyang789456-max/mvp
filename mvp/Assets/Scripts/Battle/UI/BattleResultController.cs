@@ -1,4 +1,5 @@
 using Mvp.Battle.Outcome;
+using Mvp.Progression;
 using Mvp.SettlementShop;
 using Mvp.Shared;
 using TMPro;
@@ -67,12 +68,26 @@ namespace Mvp.Battle.UI
         {
             if (!BeginSubmit()) return;
             gameObject.SetActive(false);
+            var rollContext = new TraitOfferRollContext
+            {
+                LevelIndex = BattleStartContext.LevelIndex,
+                HasBattleResult = true,
+                InitialPlayerUnits = _result.InitialPlayerUnits,
+                PlayerUnitsLost = _result.PlayerUnitsLost,
+                SurvivingPlayerGroups = _result.SurvivingPlayerGroups,
+                InitialEnemyGroups = _result.InitialEnemyGroups,
+                SurvivingEnemyGroups = _result.SurvivingEnemyGroups
+            };
+            TraitShopDirector.CollectOwnedTags(PlayerProgressionStore.Current,
+                rollContext.OwnedTraitTags);
+
             var args = new SettlementShopOpenArgs
             {
                 SessionId = _result.BattleId + "_shop",
                 RewardGrantId = _result.RewardGrantId,
                 RandomSeed = _result.ShopRandomSeed,
-                RewardGold = _result.RewardGold
+                RewardGold = _result.RewardGold,
+                RollContext = rollContext
             };
             var roster = BattleStartContext.ExpeditionRoster;
             if (roster != null)

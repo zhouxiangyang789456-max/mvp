@@ -8,6 +8,7 @@ using Mvp.Battle.Map;
 using Mvp.CommanderSelect;
 using Mvp.Shared;
 using Mvp.Battle.Commanders;
+using Mvp.Battle.Traits;
 
 namespace Mvp.Battle.UI
 {
@@ -426,11 +427,15 @@ namespace Mvp.Battle.UI
                 _healthBarFill.sizeDelta = new Vector2(bgSize.x * Mathf.Clamp01(frac), bgSize.y);
             }
 
+            string[] equippedTraits = TraitEffectService.GetEquippedTraitNames(c.Id);
+            bool hasEquipped = equippedTraits != null && equippedTraits.Length > 0;
             for (int i = 0; i < _traitRoots.Length; i++)
             {
                 var root = _traitRoots[i];
                 if (root == null) continue;
-                bool has = c.Traits != null && i < c.Traits.Count;
+                bool has = hasEquipped
+                    ? i < equippedTraits.Length && !string.IsNullOrEmpty(equippedTraits[i])
+                    : c.Traits != null && i < c.Traits.Count;
                 root.gameObject.SetActive(has);
                 if (!has) continue;
 
@@ -450,7 +455,7 @@ namespace Mvp.Battle.UI
                     lrt.offsetMin = Vector2.zero;
                     lrt.offsetMax = Vector2.zero;
                 }
-                label.text = c.Traits[i];
+                label.text = hasEquipped ? equippedTraits[i] : c.Traits[i];
             }
         }
 

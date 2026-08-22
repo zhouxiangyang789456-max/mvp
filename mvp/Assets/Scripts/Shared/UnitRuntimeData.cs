@@ -15,6 +15,11 @@ namespace Mvp.Shared
         public Vector3 WorldPosition;
         public UnitCommand CurrentCommand = new UnitCommand();
         public int CurrentHealth;
+        /// <summary>
+        /// Effective max health after trait modifiers (settled once at spawn).
+        /// Zero means "no trait modification; fall back to Definition.MaxHealth".
+        /// </summary>
+        public int RuntimeMaxHealth;
         public UnitState State;
     }
 }

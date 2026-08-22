@@ -52,16 +52,20 @@ namespace Mvp.Battle.Commanders
                 if (group == null || group.IsDefeated) { _completedAttackGroups.Add(pair.Key); continue; }
                 var plan = pair.Value;
                 if (plan.Sequence != group.CurrentCommand.Sequence) { _completedAttackGroups.Add(pair.Key); continue; }
+                if (plan.Started) continue;
                 if (!HasValidAttackTarget(plan))
                 {
                     AbortAttackPlan(group);
                     _completedAttackGroups.Add(pair.Key);
                     continue;
                 }
+                if (plan.PrimaryTarget == null || plan.PrimaryTarget.Data == null ||
+                    plan.PrimaryTarget.Data.State == UnitState.Dead)
+                    plan.PrimaryTarget = FindNearestEnemy(group, plan.TargetGroup);
                 if (!AtLockedSlots(group, plan.Anchor)) continue;
                 ReleaseReservation(group);
                 BeginStationaryAttack(group, plan.TargetGroup, plan.PrimaryTarget);
-                _completedAttackGroups.Add(pair.Key);
+                plan.Started = true;
             }
             for (int i = 0; i < _completedAttackGroups.Count; i++)
                 _attackPlans.Remove(_completedAttackGroups[i]);
@@ -71,6 +75,7 @@ namespace Mvp.Battle.Commanders
         {
             var registry = CommanderGroupRegistry.Instance;
             if (registry == null) return;
+            var combat = UnitCombatController.Instance;
             for (int i = 0; i < registry.Groups.Count; i++)
             {
                 var group = registry.Groups[i];
@@ -85,24 +90,30 @@ namespace Mvp.Battle.Commanders
                     continue;
                 }
                 if (group.State != CommanderGroupState.Attacking) continue;
-                // A pending attack plan means the group is still moving into its locked
-                // combat slots; no member is engaged yet, so it must not return to Idle.
-                if (_attackPlans.ContainsKey(group.GroupId)) continue;
-                var combat = UnitCombatController.Instance;
-                bool engaged = false;
-                for (int m = 0; m < group.Members.Count; m++)
+                AttackPlan plan;
+                if (_attackPlans.TryGetValue(group.GroupId, out plan))
                 {
-                    var member = group.Members[m];
-                    if (member != null && member.Data != null && member.Data.State != UnitState.Dead &&
-                        combat != null && combat.IsEngaged(member))
+                    if (!HasValidAttackTarget(plan))
                     {
-                        engaged = true;
-                        break;
+                        AbortAttackPlan(group);
+                        _attackPlans.Remove(group.GroupId);
                     }
+                    else if (plan.Started && !GroupHasEngagedMember(group, combat))
+                    {
+                        plan.PrimaryTarget = FindNearestEnemy(group, plan.TargetGroup);
+                        if (plan.PrimaryTarget != null) BeginStationaryAttack(group, plan.TargetGroup, plan.PrimaryTarget);
+                    }
+                    continue;
                 }
-                if (engaged) continue;
-                group.State = CommanderGroupState.Idle;
-                group.CurrentCommand.Type = GroupCommandType.None;
+                if (GroupHasEngagedMember(group, combat)) continue;
+                var targetGroup = registry != null ? registry.Find(group.CurrentCommand.TargetGroupId) : null;
+                var nextTarget = FindNearestEnemy(group, targetGroup);
+                if (nextTarget != null)
+                {
+                    BeginStationaryAttack(group, targetGroup, nextTarget);
+                    continue;
+                }
+                AbortAttackPlan(group);
             }
         }
 
@@ -224,21 +235,32 @@ namespace Mvp.Battle.Commanders
 
         public bool CommandAttack(CommanderGroupRuntime group, UnitView clickedTarget)
         {
+            return CommandAttack(group, clickedTarget, true);
+        }
+
+        public bool CommandAttack(CommanderGroupRuntime group, UnitView clickedTarget,
+            bool moveIntoRange)
+        {
             if (BattleSimulationState.IsFrozen) return false;
             var registry = CommanderGroupRegistry.Instance;
             if (group == null || clickedTarget == null || group.IsDefeated) return false;
 
             var targetGroup = registry != null ? registry.Find(clickedTarget) : null;
             EnsureLockedLayout(group);
-            Vector2Int combatAnchor;
-            if (!FindCombatAnchor(group, targetGroup, clickedTarget, out combatAnchor))
+            Vector2Int attackAnchor = group.AnchorCell;
+            bool started = true;
+            if (moveIntoRange)
             {
-                CollectAlive(group, _members);
-                FlashGroup(_members);
-                return false;
-            }
+                if (!FindCombatAnchor(group, targetGroup, clickedTarget, out attackAnchor))
+                {
+                    CollectAlive(group, _members);
+                    FlashGroup(_members);
+                    return false;
+                }
 
-            if (!IssueLockedMove(group, combatAnchor)) return false;
+                if (!IssueLockedMove(group, attackAnchor)) return false;
+                started = false;
+            }
 
             group.State = CommanderGroupState.Attacking;
             group.CurrentCommand.Type = GroupCommandType.AttackGroup;
@@ -246,11 +268,17 @@ namespace Mvp.Battle.Commanders
             group.CurrentCommand.Sequence++;
             _attackPlans[group.GroupId] = new AttackPlan
             {
-                Anchor = combatAnchor,
+                Anchor = attackAnchor,
                 TargetGroup = targetGroup,
                 PrimaryTarget = clickedTarget,
-                Sequence = group.CurrentCommand.Sequence
+                Sequence = group.CurrentCommand.Sequence,
+                Started = started
             };
+            if (started)
+            {
+                ReleaseReservation(group);
+                BeginStationaryAttack(group, targetGroup, clickedTarget);
+            }
             return true;
         }
 
@@ -326,10 +354,11 @@ namespace Mvp.Battle.Commanders
             var movement = UnitMovementController.Instance;
             if (movement == null) return false;
             ClearGroupOccupancy(members, grid, false);
+            float groupSpeed = ComputeGroupMoveSpeed(members);
             int accepted = 0;
             for (int i = 0; i < members.Count; i++)
             {
-                if (movement.CommandMove(members[i], targets[i])) accepted++;
+                if (movement.CommandMove(members[i], targets[i], groupSpeed)) accepted++;
                 else break;
             }
             if (accepted != members.Count)
@@ -346,11 +375,21 @@ namespace Mvp.Battle.Commanders
             CollectAlive(group, _members);
             for (int i = 0; i < _members.Count; i++)
             {
-                UnitView target = targetGroup != null
-                    ? FindNearestEnemy(_members[i], targetGroup.Members)
-                    : primaryTarget;
+                UnitView target = IsAliveEnemy(primaryTarget, _members[i])
+                    ? primaryTarget
+                    : targetGroup != null
+                        ? FindNearestEnemy(_members[i], targetGroup.Members)
+                        : null;
                 if (target != null) combat.CommandAttack(_members[i], target, false);
             }
+        }
+
+        static bool IsAliveEnemy(UnitView target, UnitView attacker)
+        {
+            return target != null && attacker != null &&
+                target.Data != null && attacker.Data != null &&
+                target.Data.State != UnitState.Dead &&
+                target.Data.Team != attacker.Data.Team;
         }
 
         static bool HasValidAttackTarget(AttackPlan plan)
@@ -382,32 +421,31 @@ namespace Mvp.Battle.Commanders
             CommanderGroupRuntime targetGroup, UnitView primary, out Vector2Int anchor)
         {
             anchor = group.AnchorCell;
-            Vector2Int targetCenter = primary.Data.GridPosition;
-            if (targetGroup != null)
-            {
-                int sx = 0, sy = 0, count = 0;
-                for (int i = 0; i < targetGroup.Members.Count; i++)
-                {
-                    var member = targetGroup.Members[i];
-                    if (member == null || member.Data == null || member.Data.State == UnitState.Dead) continue;
-                    sx += member.Data.GridPosition.x; sy += member.Data.GridPosition.y; count++;
-                }
-                if (count > 0) targetCenter = new Vector2Int(
-                    Mathf.RoundToInt(sx / (float)count), Mathf.RoundToInt(sy / (float)count));
-            }
+            if (primary == null || primary.Data == null) return false;
 
             var grid = BattleGridController.Instance;
             CollectAlive(group, _members);
-            for (int radius = 1; radius <= 5; radius++)
+            if (_members.Count == 0 || grid == null) return false;
+
+            Vector2Int targetCell = primary.Data.GridPosition;
+            BuildLockedTargets(group, group.AnchorCell, _members, _slots);
+            if (AnySlotCoversTarget(_members, _slots, targetCell))
+                return true;
+
+            int maxRange = MaxAttackRange(_members);
+            if (maxRange <= 0) return false;
+
+            for (int radius = maxRange; radius >= 1; radius--)
             {
                 int bestScore = int.MaxValue;
                 bool foundAtRadius = false;
-                for (int y = targetCenter.y - radius; y <= targetCenter.y + radius; y++)
-                for (int x = targetCenter.x - radius; x <= targetCenter.x + radius; x++)
+                for (int y = targetCell.y - radius; y <= targetCell.y + radius; y++)
+                for (int x = targetCell.x - radius; x <= targetCell.x + radius; x++)
                 {
-                    if (Mathf.Max(Mathf.Abs(x - targetCenter.x), Mathf.Abs(y - targetCenter.y)) != radius) continue;
+                    if (Mathf.Max(Mathf.Abs(x - targetCell.x), Mathf.Abs(y - targetCell.y)) != radius) continue;
                     var candidate = new Vector2Int(x, y);
                     BuildLockedTargets(group, candidate, _members, _slots);
+                    if (!AnySlotCoversTarget(_members, _slots, targetCell)) continue;
                     if (!ValidateSlots(group, grid, _slots)) continue;
                     int score = Mathf.Abs(candidate.x - group.AnchorCell.x) +
                         Mathf.Abs(candidate.y - group.AnchorCell.y);
@@ -417,6 +455,38 @@ namespace Mvp.Battle.Commanders
                     foundAtRadius = true;
                 }
                 if (foundAtRadius) return true;
+            }
+            return false;
+        }
+
+        static int MaxAttackRange(List<UnitView> members)
+        {
+            int range = 0;
+            for (int i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                if (member == null || member.Data == null ||
+                    member.Data.State == UnitState.Dead ||
+                    member.Data.Definition == null) continue;
+                range = Mathf.Max(range,
+                    Mathf.RoundToInt(member.Data.Definition.AttackRange));
+            }
+            return range;
+        }
+
+        static bool AnySlotCoversTarget(List<UnitView> members,
+            List<Vector2Int> slots, Vector2Int targetCell)
+        {
+            for (int i = 0; i < members.Count && i < slots.Count; i++)
+            {
+                var member = members[i];
+                if (member == null || member.Data == null ||
+                    member.Data.State == UnitState.Dead ||
+                    member.Data.Definition == null) continue;
+                int range = Mathf.RoundToInt(member.Data.Definition.AttackRange);
+                int dx = Mathf.Abs(slots[i].x - targetCell.x);
+                int dz = Mathf.Abs(slots[i].y - targetCell.y);
+                if (Mathf.Max(dx, dz) <= range) return true;
             }
             return false;
         }
@@ -472,9 +542,11 @@ namespace Mvp.Battle.Commanders
             List<Vector2Int> slots)
         {
             var selection = UnitSelectionController.Instance;
+            var uniqueSlots = new HashSet<Vector2Int>();
             for (int i = 0; i < slots.Count; i++)
             {
                 var cell = slots[i];
+                if (!uniqueSlots.Add(cell)) return false;
                 if (!grid.InBounds(cell) || !grid.IsWalkable(cell)) return false;
                 var reservations = FormationReservationService.Instance;
                 if (reservations != null && reservations.IsReservedByOther(group.GroupId, cell))
@@ -563,6 +635,53 @@ namespace Mvp.Battle.Commanders
             return best;
         }
 
+        static float ComputeGroupMoveSpeed(List<UnitView> members)
+        {
+            float speed = float.MaxValue;
+            for (int i = 0; i < members.Count; i++)
+            {
+                var member = members[i];
+                if (member == null || member.Data == null || member.Data.Definition == null) continue;
+                float memberSpeed = member.Data.Definition.MoveSpeed *
+                    Mvp.Battle.Traits.TraitEffectService.GetMoveSpeedMultiplier(member.Data);
+                if (memberSpeed < speed) speed = memberSpeed;
+            }
+            return speed == float.MaxValue ? 0f : Mathf.Max(0.01f, speed);
+        }
+
+        static UnitView FindNearestEnemy(CommanderGroupRuntime group, CommanderGroupRuntime targetGroup)
+        {
+            if (group == null || targetGroup == null) return null;
+            UnitView best = null;
+            int bestDistance = int.MaxValue;
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member == null || member.Data == null || member.Data.State == UnitState.Dead) continue;
+                var target = FindNearestEnemy(member, targetGroup.Members);
+                if (target == null || target.Data == null) continue;
+                int distance = Mathf.Abs(member.Data.GridPosition.x - target.Data.GridPosition.x) +
+                    Mathf.Abs(member.Data.GridPosition.y - target.Data.GridPosition.y);
+                if (distance >= bestDistance) continue;
+                best = target;
+                bestDistance = distance;
+            }
+            return best;
+        }
+
+        static bool GroupHasEngagedMember(CommanderGroupRuntime group, UnitCombatController combat)
+        {
+            if (group == null || combat == null) return false;
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member != null && member.Data != null && member.Data.State != UnitState.Dead &&
+                    combat.IsEngaged(member))
+                    return true;
+            }
+            return false;
+        }
+
         static void FlashGroup(List<UnitView> members)
         {
             for (int i = 0; i < members.Count; i++) members[i].FlashInvalid();
@@ -574,6 +693,7 @@ namespace Mvp.Battle.Commanders
             public CommanderGroupRuntime TargetGroup;
             public UnitView PrimaryTarget;
             public int Sequence;
+            public bool Started;
         }
     }
 }

@@ -84,6 +84,8 @@ namespace Mvp.Battle
                 () => CreateQuad(UiPoolType.MoveTargetMarker, new Color(0.4f, 1f, 0.5f, 0.9f)), 4);
             RegisterFactory(UiPoolType.DeploymentCellHighlight,
                 () => CreateQuad(UiPoolType.DeploymentCellHighlight, new Color(0.35f, 1f, 0.45f, 0.45f)), 25);
+            RegisterFactory(UiPoolType.AttackRangeHighlight,
+                () => CreateQuad(UiPoolType.AttackRangeHighlight, new Color(1f, 0.56f, 0.18f, 0.32f)), 81);
         }
 
         static PoolableUi CreateQuad(UiPoolType type, Color color)

@@ -6,15 +6,42 @@ namespace Mvp.Progression
     {
         static readonly TraitCardDefinition[] All =
         {
-            Make("trait_brave", "勇敢", "生命低于 35% 时，攻击力提高 20%。", TraitRarity.Common, 5, 2),
-            Make("trait_cautious", "谨慎", "首次受到攻击后，短时间降低所受伤害。", TraitRarity.Common, 5, 2),
-            Make("trait_inspiring", "鼓舞", "编队成员生命高于 70% 时，提高移动速度。", TraitRarity.Rare, 7, 3),
-            Make("trait_tenacious", "坚韧", "编队成员生命上限提高 10%。", TraitRarity.Rare, 7, 3),
-            Make("trait_disciplined", "纪律", "保持完整阵型时，提高攻击速度。", TraitRarity.Epic, 9, 4),
-            Make("trait_calm", "沉着", "受到攻击后短时间提高命中稳定性。", TraitRarity.Common, 5, 2),
-            Make("trait_guard", "守备", "停止移动时降低所受远程伤害。", TraitRarity.Rare, 7, 3),
-            Make("trait_hold", "坚守", "阵型未被打乱时提高防御力。", TraitRarity.Epic, 9, 4),
-            Make("trait_reflection", "回光反照", "单位剩余 5% 生命时，攻击力提高 100%。", TraitRarity.Epic, 10, 5)
+            Make("trait_brave", "勇敢", "生命低于 35% 时，攻击力提高 20%。", TraitRarity.Common, 5, 2,
+                Effect(TraitEffectKind.ModifyAttackPower,
+                    TraitTriggerKind.WhileGroupHealthBelowPercent, 0.20f, 0.35f),
+                new[] { "attack", "low_health" }),
+            Make("trait_cautious", "谨慎", "首次受到攻击后，短时间降低所受伤害。", TraitRarity.Common, 5, 2,
+                Effect(TraitEffectKind.ReduceIncomingDamage,
+                    TraitTriggerKind.WhileGroupHealthAbovePercent, 0.10f, 0.70f),
+                new[] { "defense" }),
+            Make("trait_inspiring", "鼓舞", "编队成员生命高于 70% 时，提高移动速度。", TraitRarity.Rare, 7, 3,
+                Effect(TraitEffectKind.ModifyMoveSpeed,
+                    TraitTriggerKind.WhileGroupHealthAbovePercent, 0.15f, 0.70f),
+                new[] { "mobility" }),
+            Make("trait_tenacious", "坚韧", "编队成员生命上限提高 10%。", TraitRarity.Rare, 7, 3,
+                Effect(TraitEffectKind.ModifyMaxHealth,
+                    TraitTriggerKind.Always, 0.10f, 0f),
+                new[] { "defense" }),
+            Make("trait_disciplined", "纪律", "保持完整阵型时，提高攻击速度。", TraitRarity.Epic, 9, 4,
+                Effect(TraitEffectKind.ModifyAttackCooldown,
+                    TraitTriggerKind.WhileGroupHealthAbovePercent, 0.15f, 0.70f),
+                new[] { "attack", "formation" }),
+            Make("trait_calm", "沉着", "受到攻击后短时间提高命中稳定性。", TraitRarity.Common, 5, 2,
+                Effect(TraitEffectKind.ReduceIncomingDamage,
+                    TraitTriggerKind.WhileGroupHealthAbovePercent, 0.06f, 0.70f),
+                new[] { "defense" }),
+            Make("trait_guard", "守备", "停止移动时降低所受远程伤害。", TraitRarity.Rare, 7, 3,
+                Effect(TraitEffectKind.ReduceIncomingDamage,
+                    TraitTriggerKind.Always, 0.08f, 0f),
+                new[] { "defense" }),
+            Make("trait_hold", "坚守", "阵型未被打乱时提高防御力。", TraitRarity.Epic, 9, 4,
+                Effect(TraitEffectKind.ReduceIncomingDamage,
+                    TraitTriggerKind.Always, 0.08f, 0f),
+                new[] { "defense", "formation" }),
+            Make("trait_reflection", "回光反照", "单位剩余 5% 生命时，攻击力提高 100%。", TraitRarity.Epic, 10, 5,
+                Effect(TraitEffectKind.ModifyAttackPower,
+                    TraitTriggerKind.WhileGroupHealthBelowPercent, 0.50f, 0.15f),
+                new[] { "attack", "low_health" })
         };
 
         public static IReadOnlyList<TraitCardDefinition> Definitions => All;
@@ -32,9 +59,10 @@ namespace Mvp.Progression
         }
 
         static TraitCardDefinition Make(string id, string name, string description,
-            TraitRarity rarity, int buy, int sell)
+            TraitRarity rarity, int buy, int sell,
+            TraitEffect effect = null, string[] tags = null)
         {
-            return new TraitCardDefinition
+            var def = new TraitCardDefinition
             {
                 Id = id,
                 DisplayName = name,
@@ -44,6 +72,24 @@ namespace Mvp.Progression
                 BuyPrice = buy,
                 SellPrice = sell,
                 StackPolicy = TraitStackPolicy.UniquePerCommander
+            };
+            if (effect != null) def.Effects.Add(effect);
+            if (tags != null) for (int i = 0; i < tags.Length; i++) def.Tags.Add(tags[i]);
+            return def;
+        }
+
+        static TraitEffect Effect(TraitEffectKind kind, TraitTriggerKind trigger,
+            float value, float triggerValue)
+        {
+            return new TraitEffect
+            {
+                Kind = kind,
+                Trigger = trigger,
+                Scope = TraitTargetScope.AllGroupMembers,
+                Value = value,
+                TriggerValue = triggerValue,
+                DurationSeconds = 0f,
+                MaxStacks = 1
             };
         }
     }

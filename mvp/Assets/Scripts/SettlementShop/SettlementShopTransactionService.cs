@@ -10,6 +10,7 @@ namespace Mvp.SettlementShop
         public string RewardGrantId;
         public int RandomSeed;
         public int RewardGold = 10;
+        public TraitOfferRollContext RollContext;
         public readonly List<string> ActiveCommanderIds = new List<string>();
     }
 
@@ -37,7 +38,7 @@ namespace Mvp.SettlementShop
             {
                 Session = new SettlementShopSession(args.SessionId, args.RewardGrantId,
                     args.RandomSeed, args.RewardGold, args.ActiveCommanderIds,
-                    PlayerProgressionStore.Current);
+                    PlayerProgressionStore.Current, args.RollContext);
                 SuspendedSessions.Add(args.SessionId, Session);
             }
             NotifyAll();

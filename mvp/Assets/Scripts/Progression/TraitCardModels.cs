@@ -18,6 +18,8 @@ namespace Mvp.Progression
         public int BuyPrice;
         public int SellPrice;
         public TraitStackPolicy StackPolicy;
+        public List<TraitEffect> Effects = new List<TraitEffect>();
+        public List<string> Tags = new List<string>();
     }
 
     [Serializable]

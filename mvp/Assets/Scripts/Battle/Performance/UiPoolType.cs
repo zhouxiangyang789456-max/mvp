@@ -6,6 +6,7 @@ namespace Mvp.Battle
         UnitHealthBar,
         SelectionRing,
         MoveTargetMarker,
-        DeploymentCellHighlight
+        DeploymentCellHighlight,
+        AttackRangeHighlight
     }
 }

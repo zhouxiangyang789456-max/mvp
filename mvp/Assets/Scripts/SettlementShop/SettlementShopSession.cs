@@ -24,6 +24,7 @@ namespace Mvp.SettlementShop
         readonly List<string> _inventoryIds = new List<string>();
         readonly List<string> _activeCommanderIds = new List<string>();
         readonly HashSet<string> _activeCommanderIdSet = new HashSet<string>();
+        readonly TraitOfferRollContext _rollContext;
         int _nextInstanceOrdinal;
 
         public IReadOnlyList<string> ActiveCommanderIds => _activeCommanderIds;
@@ -42,9 +43,11 @@ namespace Mvp.SettlementShop
 
         public SettlementShopSession(string sessionId, string rewardGrantId, int seed,
             int rewardGold, IEnumerable<string> activeCommanderIds,
-            PlayerProgressionSnapshot progression)
+            PlayerProgressionSnapshot progression,
+            TraitOfferRollContext rollContext = null)
         {
             if (progression == null) throw new ArgumentNullException(nameof(progression));
+            _rollContext = rollContext ?? new TraitOfferRollContext();
             SessionId = sessionId;
             RewardGrantId = rewardGrantId;
             RandomSeed = seed;
@@ -295,17 +298,37 @@ namespace Mvp.SettlementShop
 
         void RollOffers()
         {
-            var definitions = TraitCatalog.Definitions;
-            var random = new Random(RandomSeed + RefreshCount * 7919);
+            _rollContext.RefreshCount = RefreshCount;
+            RecomputeOwnedTags();
+            var rolled = TraitShopDirector.Roll(RandomSeed + RefreshCount * 7919,
+                _rollContext, TraitCatalog.Definitions, Offers.Length);
             for (int i = 0; i < Offers.Length; i++)
             {
-                var definition = definitions[random.Next(definitions.Count)];
-                Offers[i] = new ShopOffer
+                var definition = i < rolled.Length ? rolled[i] : null;
+                Offers[i] = definition == null ? null : new ShopOffer
                 {
                     DefinitionId = definition.Id,
                     Price = definition.BuyPrice,
                     Purchased = false
                 };
+            }
+        }
+
+        void RecomputeOwnedTags()
+        {
+            _rollContext.OwnedTraitTags.Clear();
+            foreach (var pair in _cards)
+            {
+                var card = pair.Value;
+                if (card == null ||
+                    (card.Location != TraitCardLocation.Inventory &&
+                     card.Location != TraitCardLocation.Equipped))
+                    continue;
+                var def = TraitCatalog.Get(card.DefinitionId);
+                if (def == null || def.Tags == null) continue;
+                for (int t = 0; t < def.Tags.Count; t++)
+                    if (!string.IsNullOrEmpty(def.Tags[t]))
+                        _rollContext.OwnedTraitTags.Add(def.Tags[t]);
             }
         }
 

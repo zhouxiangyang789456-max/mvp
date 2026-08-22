@@ -26,6 +26,7 @@ namespace Mvp.Battle.Units
         public Transform HealthAnchor { get; private set; }
 
         UnitHealthBar _healthBar;
+        UnitHealthBar _attackCooldownBar;
         Renderer _modelRenderer;
         Color _baseColor;
         float _flashTimer;
@@ -78,16 +79,16 @@ namespace Mvp.Battle.Units
             _healthBar = mgr.Acquire(HealthAnchor, Vector3.zero, barColor);
             if (_healthBar != null && Data != null)
             {
-                _healthBar.SetFill(Data.Definition != null && Data.Definition.MaxHealth > 0
-                    ? (float)Data.CurrentHealth / Data.Definition.MaxHealth
-                    : 1f);
+                int maxHp = RuntimeMaxHealthOf(Data);
+                _healthBar.SetFill(maxHp > 0 ? (float)Data.CurrentHealth / maxHp : 1f);
             }
         }
 
         public void RefreshHealthBar()
         {
-            if (_healthBar == null || Data == null || Data.Definition == null) return;
-            _healthBar.SetFill((float)Data.CurrentHealth / Data.Definition.MaxHealth);
+            if (_healthBar == null || Data == null) return;
+            int maxHp = RuntimeMaxHealthOf(Data);
+            _healthBar.SetFill(maxHp > 0 ? (float)Data.CurrentHealth / maxHp : 1f);
         }
 
         public void ReleaseHealthBar()
@@ -98,9 +99,38 @@ namespace Mvp.Battle.Units
             _healthBar = null;
         }
 
+        public void SetAttackCooldownFill(float fill01)
+        {
+            if (_attackCooldownBar == null)
+            {
+                if (HealthAnchor == null) return;
+                var mgr = UnitHealthBarManager.Instance;
+                if (mgr == null) return;
+                _attackCooldownBar = mgr.Acquire(HealthAnchor, new Vector3(0f, -0.18f, 0f),
+                    new Color(1f, 0.78f, 0.2f, 0.95f));
+            }
+            _attackCooldownBar.SetFill(fill01);
+        }
+
+        public void HideAttackCooldownBar()
+        {
+            if (_attackCooldownBar == null) return;
+            var mgr = UnitHealthBarManager.Instance;
+            if (mgr != null) mgr.Release(_attackCooldownBar);
+            _attackCooldownBar = null;
+        }
+
         void OnDestroy()
         {
             RemoveFromBattleServices();
+        }
+
+        static int RuntimeMaxHealthOf(UnitRuntimeData data)
+        {
+            if (data == null) return 1;
+            return data.RuntimeMaxHealth > 0
+                ? data.RuntimeMaxHealth
+                : (data.Definition != null ? data.Definition.MaxHealth : 1);
         }
 
         void BuildPlaceholder(UnitType type, TeamId team)
@@ -157,6 +187,7 @@ namespace Mvp.Battle.Units
         public void Die()
         {
             ReleaseHealthBar();
+            HideAttackCooldownBar();
             RemoveFromBattleServices();
             if (gameObject != null) Destroy(gameObject);
         }

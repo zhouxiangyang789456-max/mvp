@@ -7,6 +7,7 @@ using Mvp.Battle.Commanders;
 using Mvp.CommanderSelect;
 using Mvp.Battle.Formation;
 using Mvp.Battle.Outcome;
+using Mvp.Battle.Traits;
 
 namespace Mvp.Battle.Units
 {
@@ -37,6 +38,7 @@ namespace Mvp.Battle.Units
             }
 
             var roster = ResolveRoster();
+            TraitEffectService.BuildRuntime(roster.Commanders);
             var deployment = ResolveDeployment(grid, roster.Commanders.Count, 2);
             if (!deployment.Passed)
             {
@@ -267,6 +269,10 @@ namespace Mvp.Battle.Units
 
             grid.SetOccupied(cell, true);
 
+            int maxHealthBonus = TraitEffectService.GetMaxHealthBonus(def, commanderGroupId);
+            int runtimeMaxHealth = def.MaxHealth + maxHealthBonus;
+            if (runtimeMaxHealth < 1) runtimeMaxHealth = 1;
+
             var data = new UnitRuntimeData
             {
                 Id = "unit_" + team + "_" + cell.x + "_" + cell.y,
@@ -275,7 +281,8 @@ namespace Mvp.Battle.Units
                 CommanderGroupId = commanderGroupId,
                 FormationSlotIndex = formationSlotIndex,
                 SpawnOrder = spawnOrder,
-                CurrentHealth = def.MaxHealth,
+                RuntimeMaxHealth = runtimeMaxHealth,
+                CurrentHealth = runtimeMaxHealth,
                 State = UnitState.Idle,
                 GridPosition = cell
             };

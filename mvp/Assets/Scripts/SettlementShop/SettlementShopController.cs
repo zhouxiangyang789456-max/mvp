@@ -223,7 +223,10 @@ namespace Mvp.SettlementShop
                 var card = ImagePanel(_offersRoot, "Offer" + i, _offerCardSprite, Color.white);
                 SetRect(card, new Vector2(0.5f, 0.52f), new Vector2(170, 390), new Vector2((i - 1) * 250f, 0));
                 Label(card, def.DisplayName, 18, new Vector2(0.5f, 0.76f), new Vector2(155, 32), Vector2.zero);
-                var desc = Label(card, def.Description, 18, new Vector2(0.5f, 0.5f), new Vector2(150, 175), Vector2.zero);
+                string descText = def.Description;
+                string summary = def.BuildEffectSummary();
+                if (!string.IsNullOrEmpty(summary)) descText += "\n\n" + summary;
+                var desc = Label(card, descText, 18, new Vector2(0.5f, 0.5f), new Vector2(150, 175), Vector2.zero);
                 desc.color = new Color(0.18f, 0.11f, 0.055f);
                 desc.enableAutoSizing = true;
                 desc.fontSizeMin = 14;

@@ -147,6 +147,13 @@ namespace Mvp.Battle.AI
                 group.CurrentCommand.TargetGroupId == target.GroupId;
             if (alreadyAttacking)
             {
+                if (!IsGroupMoving(group) && !HasAnyMemberInAttackRange(group, target))
+                {
+                    commands.CancelGroupCommand(group);
+                    IssueAttack(group, target, context, commands,
+                        EnemyAiDecisionReason.TargetStillVisible);
+                    return;
+                }
                 context.State = EnemyAiState.WaitCommand;
                 context.LastReason = EnemyAiDecisionReason.TargetStillVisible;
                 return;
@@ -220,7 +227,7 @@ namespace Mvp.Battle.AI
                 return;
             }
             UnitView primary = FindPrimaryTarget(group, target);
-            if (primary != null && commands.CommandAttack(group, primary))
+            if (primary != null && commands.CommandAttack(group, primary, true))
             {
                 context.State = EnemyAiState.WaitCommand;
                 context.LastReason = successReason;
@@ -322,6 +329,43 @@ namespace Mvp.Battle.AI
                 bestDistance = distance;
             }
             return best;
+        }
+
+        static bool IsGroupMoving(CommanderGroupRuntime group)
+        {
+            if (group == null) return false;
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member != null && member.Data != null &&
+                    member.Data.State == UnitState.Moving)
+                    return true;
+            }
+            return false;
+        }
+
+        static bool HasAnyMemberInAttackRange(CommanderGroupRuntime group,
+            CommanderGroupRuntime target)
+        {
+            if (group == null || target == null) return false;
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var attacker = group.Members[i];
+                if (attacker == null || attacker.Data == null ||
+                    attacker.Data.State == UnitState.Dead ||
+                    attacker.Data.Definition == null) continue;
+                for (int t = 0; t < target.Members.Count; t++)
+                {
+                    var victim = target.Members[t];
+                    if (victim == null || victim.Data == null ||
+                        victim.Data.State == UnitState.Dead) continue;
+                    int dx = Mathf.Abs(attacker.Data.GridPosition.x - victim.Data.GridPosition.x);
+                    int dz = Mathf.Abs(attacker.Data.GridPosition.y - victim.Data.GridPosition.y);
+                    if (Mathf.Max(dx, dz) <= attacker.Data.Definition.AttackRange)
+                        return true;
+                }
+            }
+            return false;
         }
 
         static int Manhattan(Vector2Int a, Vector2Int b)

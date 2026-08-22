@@ -4,6 +4,7 @@ using Mvp.Battle.Map;
 using Mvp.Shared;
 using Mvp.Battle.Vision;
 using Mvp.Battle.Outcome;
+using Mvp.Battle.Traits;
 
 namespace Mvp.Battle.Units
 {
@@ -71,6 +72,12 @@ namespace Mvp.Battle.Units
         /// <summary>Issues a move command to the target cell. Returns false on reject.</summary>
         public bool CommandMove(UnitView unit, Vector2Int targetCell)
         {
+            return CommandMove(unit, targetCell, 0f);
+        }
+
+        /// <summary>Issues a move command, optionally clamped by a group speed cap.</summary>
+        public bool CommandMove(UnitView unit, Vector2Int targetCell, float speedLimit)
+        {
             if (BattleSimulationState.IsFrozen) return false;
             var grid = BattleGridController.Instance;
             if (unit == null || unit.Data == null || grid == null) return false;
@@ -112,6 +119,7 @@ namespace Mvp.Battle.Units
             // output[0] is the start cell; waypoints are the rest.
             for (int i = 1; i < _pathBuffer.Count; i++) ms.Cells.Add(_pathBuffer[i]);
             ms.Index = 0;
+            ms.Speed = speedLimit > 0f ? speedLimit : 0f;
 
             data.CurrentCommand.Type = UnitCommandType.Move;
             data.CurrentCommand.TargetPosition = GridToWorldWithElevation(targetCell);
@@ -175,7 +183,10 @@ namespace Mvp.Battle.Units
         void Advance(UnitView unit, MoveState ms)
         {
             var data = unit.Data;
-            float step = data.Definition.MoveSpeed * Time.deltaTime;
+            float speed = ms.Speed > 0f
+                ? ms.Speed
+                : data.Definition.MoveSpeed * TraitEffectService.GetMoveSpeedMultiplier(data);
+            float step = speed * Time.deltaTime;
             Vector2Int cell = ms.Cells[ms.Index];
             Vector3 target = GridToWorldWithElevation(cell);
             Vector3 pos = unit.transform.position;
@@ -186,6 +197,7 @@ namespace Mvp.Battle.Units
 
             if (dist <= MoveState.ArrivalTolerance)
             {
+                if (!CanEnterCell(unit, cell)) return;
                 SnapToCell(unit, cell);
                 ms.Index++;
                 if (ms.Index >= ms.Cells.Count)
@@ -200,6 +212,19 @@ namespace Mvp.Battle.Units
             pos.z += dz / dist * step;
             pos.y = Mathf.MoveTowards(pos.y, target.y, step);
             unit.transform.position = pos;
+        }
+
+        bool CanEnterCell(UnitView unit, Vector2Int cell)
+        {
+            var grid = BattleGridController.Instance;
+            if (grid == null || unit == null || unit.Data == null) return false;
+            if (!grid.IsOccupied(cell)) return true;
+
+            var selection = UnitSelectionController.Instance;
+            var occupant = selection != null ? selection.FindAtCell(cell) : null;
+            if (occupant == unit) return true;
+            return occupant == null || occupant.Data == null ||
+                occupant.Data.State == UnitState.Dead;
         }
 
         /// <summary>Updates occupancy + grid position for a unit and snaps it to the cell center.</summary>
@@ -266,6 +291,7 @@ namespace Mvp.Battle.Units
             public const float ArrivalTolerance = 0.08f;
             public readonly List<Vector2Int> Cells = new List<Vector2Int>();
             public int Index;
+            public float Speed;
         }
     }
 }

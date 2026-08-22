@@ -144,6 +144,8 @@ namespace Mvp.Battle.Outcome
                 ResolutionTick = _resolutionTick,
                 InitialPlayerGroups = _initialPlayers,
                 InitialEnemyGroups = _initialEnemies,
+                InitialPlayerUnits = _initialPlayerUnits,
+                InitialEnemyUnits = _initialEnemyUnits,
                 SurvivingPlayerGroups = players,
                 SurvivingEnemyGroups = enemies,
                 PlayerUnitsLost = _initialPlayerUnits - CountAliveUnits(TeamId.Player),

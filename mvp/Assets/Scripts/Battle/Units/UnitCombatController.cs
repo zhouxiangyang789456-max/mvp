@@ -3,6 +3,7 @@ using UnityEngine;
 using Mvp.Battle.Map;
 using Mvp.Shared;
 using Mvp.Battle.Outcome;
+using Mvp.Battle.Traits;
 
 namespace Mvp.Battle.Units
 {
@@ -85,6 +86,7 @@ namespace Mvp.Battle.Units
             }
             cs.Target = target;
             cs.Cooldown = 0f; // first shot fires immediately if already in range
+            cs.CooldownDuration = ComputeCooldownDuration(attacker.Data);
             cs.RepathTimer = 0f;
             cs.Cells.Clear();
             cs.Index = 0;
@@ -103,11 +105,13 @@ namespace Mvp.Battle.Units
         {
             if (unit == null) return;
             _combats.Remove(unit);
+            unit.HideAttackCooldownBar();
             var data = unit.Data;
             if (data == null) return;
             if (data.State == UnitState.Chasing || data.State == UnitState.Attacking)
-            {
                 data.State = UnitState.Idle;
+            if (data.CurrentCommand.Type == UnitCommandType.Attack)
+            {
                 data.CurrentCommand.Type = UnitCommandType.None;
                 data.CurrentCommand.TargetUnit = null;
             }
@@ -151,9 +155,12 @@ namespace Mvp.Battle.Units
                         SnapToCurrentCell(attacker);
                     }
                     cs.Cooldown -= dt;
+                    attacker.SetAttackCooldownFill(1f - (cs.Cooldown / cs.CooldownDuration));
                     if (cs.Cooldown <= 0f)
                     {
-                        cs.Cooldown = attacker.Data.Definition.AttackCooldown;
+                        cs.CooldownDuration = ComputeCooldownDuration(attacker.Data);
+                        cs.Cooldown = cs.CooldownDuration;
+                        attacker.SetAttackCooldownFill(0f);
                         Fire(attacker, target);
                     }
                 }
@@ -161,7 +168,9 @@ namespace Mvp.Battle.Units
                 {
                     if (!cs.AllowPursuit)
                     {
-                        attacker.Data.State = UnitState.Idle;
+                        if (attacker.Data.State != UnitState.Idle)
+                            attacker.Data.State = UnitState.Idle;
+                        attacker.HideAttackCooldownBar();
                         continue;
                     }
                     if (attacker.Data.State != UnitState.Chasing)
@@ -193,6 +202,9 @@ namespace Mvp.Battle.Units
             var atk = attacker.Data;
             var tgt = target.Data;
             int dmg = atk.Definition != null ? atk.Definition.AttackPower : 0;
+            dmg = Mathf.RoundToInt(dmg * TraitEffectService.GetAttackPowerMultiplier(atk));
+            dmg = Mathf.RoundToInt(dmg * TraitEffectService.GetIncomingDamageMultiplier(tgt));
+            if (dmg < 0) dmg = 0;
             tgt.CurrentHealth -= dmg;
             if (tgt.CurrentHealth < 0) tgt.CurrentHealth = 0;
             target.RefreshHealthBar();
@@ -258,7 +270,8 @@ namespace Mvp.Battle.Units
                 return;
             }
 
-            float step = data.Definition.MoveSpeed * dt;
+            float step = data.Definition.MoveSpeed *
+                TraitEffectService.GetMoveSpeedMultiplier(data) * dt;
             Vector2Int cell = cs.Cells[cs.Index];
             Vector3 tpos = GridToWorldWithElevation(cell);
             Vector3 pos = attacker.transform.position;
@@ -268,6 +281,7 @@ namespace Mvp.Battle.Units
 
             if (dist <= CombatState.ArrivalTolerance)
             {
+                if (!CanEnterCell(attacker, cell)) return;
                 var move = UnitMovementController.Instance;
                 if (move != null) move.SnapToCell(attacker, cell);
                 else SnapToCellLocal(attacker, cell);
@@ -280,6 +294,19 @@ namespace Mvp.Battle.Units
                 pos.y = Mathf.MoveTowards(pos.y, tpos.y, step);
                 attacker.transform.position = pos;
             }
+        }
+
+        bool CanEnterCell(UnitView unit, Vector2Int cell)
+        {
+            var grid = BattleGridController.Instance;
+            if (grid == null || unit == null || unit.Data == null) return false;
+            if (!grid.IsOccupied(cell)) return true;
+
+            var selection = UnitSelectionController.Instance;
+            var occupant = selection != null ? selection.FindAtCell(cell) : null;
+            if (occupant == unit) return true;
+            return occupant == null || occupant.Data == null ||
+                occupant.Data.State == UnitState.Dead;
         }
 
         /// <summary>
@@ -368,11 +395,20 @@ namespace Mvp.Battle.Units
         {
             var data = attacker.Data;
             if (data != null && (data.State == UnitState.Chasing || data.State == UnitState.Attacking))
-            {
                 data.State = UnitState.Idle;
+            if (data != null && data.CurrentCommand.Type == UnitCommandType.Attack)
+            {
                 data.CurrentCommand.Type = UnitCommandType.None;
                 data.CurrentCommand.TargetUnit = null;
             }
+            attacker.HideAttackCooldownBar();
+        }
+
+        static float ComputeCooldownDuration(UnitRuntimeData data)
+        {
+            if (data == null || data.Definition == null) return 1f;
+            return Mathf.Max(0.01f, data.Definition.AttackCooldown *
+                TraitEffectService.GetAttackCooldownMultiplier(data));
         }
 
         sealed class CombatState
@@ -380,6 +416,7 @@ namespace Mvp.Battle.Units
             public const float ArrivalTolerance = 0.08f;
             public UnitView Target;
             public float Cooldown;
+            public float CooldownDuration;
             public float RepathTimer;
             public Vector2Int LastTargetCell;
             public readonly List<Vector2Int> Cells = new List<Vector2Int>();

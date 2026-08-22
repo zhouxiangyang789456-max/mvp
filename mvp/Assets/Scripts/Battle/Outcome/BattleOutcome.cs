@@ -14,6 +14,8 @@ namespace Mvp.Battle.Outcome
         public int ResolutionTick;
         public int InitialPlayerGroups;
         public int InitialEnemyGroups;
+        public int InitialPlayerUnits;
+        public int InitialEnemyUnits;
         public int SurvivingPlayerGroups;
         public int SurvivingEnemyGroups;
         public int PlayerUnitsLost;
