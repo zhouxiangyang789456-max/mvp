@@ -50,6 +50,10 @@ namespace Mvp.Battle.Traits
             // bonus) return the correct value before the first MediumTick.
             ActivateAlwaysEffects();
             RefreshConditions();
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            TraitDebugReporter.NotifyBattleStart();
+#endif
         }
 
         static void ActivateAlwaysEffects()
@@ -91,6 +95,14 @@ namespace Mvp.Battle.Traits
         {
             if (!string.IsNullOrEmpty(groupId)) _runtime.Remove(groupId);
         }
+
+        /// <summary>
+        /// Read-only snapshot of the current runtime trait state for editor/dev
+        /// diagnostics (TraitDebugReporter). Copies the values so concurrent
+        /// mutation by battle systems can never throw during a read.
+        /// </summary>
+        internal static List<CommanderTraitRuntime> GetDebugRuntimes()
+            => new List<CommanderTraitRuntime>(_runtime.Values);
 
         static void EnsureHost()
         {
