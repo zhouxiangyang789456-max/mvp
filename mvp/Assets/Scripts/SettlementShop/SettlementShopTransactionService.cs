@@ -12,6 +12,9 @@ namespace Mvp.SettlementShop
         public int RewardGold = 10;
         public TraitOfferRollContext RollContext;
         public readonly List<string> ActiveCommanderIds = new List<string>();
+
+        /// <summary>所选指挥官 Id(§8.3 方向补强 DTO 来源);null 时不启用方向补强。</summary>
+        public string SelectedCommanderId;
     }
 
     public sealed class SettlementShopTransactionService
@@ -38,7 +41,7 @@ namespace Mvp.SettlementShop
             {
                 Session = new SettlementShopSession(args.SessionId, args.RewardGrantId,
                     args.RandomSeed, args.RewardGold, args.ActiveCommanderIds,
-                    PlayerProgressionStore.Current, args.RollContext);
+                    PlayerProgressionStore.Current, args.RollContext, args.SelectedCommanderId);
                 SuspendedSessions.Add(args.SessionId, Session);
             }
             NotifyAll();

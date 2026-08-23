@@ -20,10 +20,16 @@ namespace Mvp.Progression
         /// <summary>主流派得分。</summary>
         public int PrimaryScore;
 
+        /// <summary>成型程度(由分析器写入,消费方直接读取,不依赖分析器)。</summary>
+        public TraitBuildMaturity Maturity;
+
         /// <summary>主流派推荐补齐标签,按可行动性排序(权重降序→当前计数升序→标签序)。</summary>
         public readonly List<string> RecommendedTags = new List<string>();
 
         /// <summary>输入卡池的标签计数(防御性拷贝)。</summary>
         public readonly Dictionary<string, int> TagCounts = new Dictionary<string, int>();
+
+        /// <summary>主流派公式的 (标签,权重) 列表,防御性拷贝;未成型时为空。</summary>
+        public readonly List<TraitTagWeight> PrimaryTags = new List<TraitTagWeight>();
     }
 }

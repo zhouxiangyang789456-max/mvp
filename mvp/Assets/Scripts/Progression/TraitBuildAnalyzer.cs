@@ -67,6 +67,139 @@ namespace Mvp.Progression
                     new TraitTagWeight { Tag = "balanced", Weight = 1 },
                     new TraitTagWeight { Tag = "support", Weight = 1 }
                 }
+            },
+            // ── 150 卡重构新增:12 条独占流派,旗舰均为独占标签 ×2 ──
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_frenzy_burst",
+                DisplayName = "狂暴爆发流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "frenzy", Weight = 2 },
+                    new TraitTagWeight { Tag = "attack", Weight = 1 },
+                    new TraitTagWeight { Tag = "low_health", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_frenzy_sustain",
+                DisplayName = "嗜血续航流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "frenzy", Weight = 2 },
+                    new TraitTagWeight { Tag = "lifesteal", Weight = 1 },
+                    new TraitTagWeight { Tag = "defense", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_bulwark_shield",
+                DisplayName = "护盾堡垒流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "bulwark", Weight = 2 },
+                    new TraitTagWeight { Tag = "shield", Weight = 1 },
+                    new TraitTagWeight { Tag = "formation", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_bulwark_thorns",
+                DisplayName = "荆棘反伤流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "bulwark", Weight = 2 },
+                    new TraitTagWeight { Tag = "reflect", Weight = 1 },
+                    new TraitTagWeight { Tag = "defense", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_lethality_crit",
+                DisplayName = "暴击刺客流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "lethality", Weight = 2 },
+                    new TraitTagWeight { Tag = "critical", Weight = 1 },
+                    new TraitTagWeight { Tag = "attack", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_lethality_execute",
+                DisplayName = "处决收割流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "lethality", Weight = 2 },
+                    new TraitTagWeight { Tag = "execute", Weight = 1 },
+                    new TraitTagWeight { Tag = "attack", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_scorch_burn",
+                DisplayName = "焦土灼烧流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "scorch", Weight = 2 },
+                    new TraitTagWeight { Tag = "burn", Weight = 1 },
+                    new TraitTagWeight { Tag = "attack", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_scorch_range",
+                DisplayName = "超远程压制流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "scorch", Weight = 2 },
+                    new TraitTagWeight { Tag = "range", Weight = 1 },
+                    new TraitTagWeight { Tag = "attack", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_mercenary_snowball",
+                DisplayName = "滚雪球经济流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "mercenary", Weight = 2 },
+                    new TraitTagWeight { Tag = "economy", Weight = 1 },
+                    new TraitTagWeight { Tag = "commander", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_mercenary_goldpower",
+                DisplayName = "金币转战力流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "mercenary", Weight = 2 },
+                    new TraitTagWeight { Tag = "economy", Weight = 1 },
+                    new TraitTagWeight { Tag = "attack", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_frost_burstcontrol",
+                DisplayName = "开场控场流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "frost", Weight = 2 },
+                    new TraitTagWeight { Tag = "slow", Weight = 1 },
+                    new TraitTagWeight { Tag = "control", Weight = 1 }
+                }
+            },
+            new TraitArchetypeSpec
+            {
+                Id = "archetype_frost_zone",
+                DisplayName = "阵地控场流",
+                Tags = new List<TraitTagWeight>
+                {
+                    new TraitTagWeight { Tag = "frost", Weight = 2 },
+                    new TraitTagWeight { Tag = "idle", Weight = 1 },
+                    new TraitTagWeight { Tag = "defense", Weight = 1 }
+                }
             }
         };
 
@@ -86,6 +219,22 @@ namespace Mvp.Progression
         {
             if (tagCounts == null) return SelectSummary(new Dictionary<string, int>());
             return SelectSummary(tagCounts);
+        }
+
+        /// <summary>按已拥有标签列表构建计数并判定(会话把 OwnedTraitTags 直接传入)。</summary>
+        public static BuildAffinitySummary Analyze(IReadOnlyList<string> ownedTags)
+        {
+            var counts = new Dictionary<string, int>();
+            if (ownedTags != null)
+                for (int i = 0; i < ownedTags.Count; i++)
+                {
+                    string tag = ownedTags[i];
+                    if (string.IsNullOrEmpty(tag)) continue;
+                    int current;
+                    counts.TryGetValue(tag, out current);
+                    counts[tag] = current + 1;
+                }
+            return SelectSummary(counts);
         }
 
         public static TraitBuildMaturity GetMaturity(int primaryScore)
@@ -164,6 +313,13 @@ namespace Mvp.Progression
 
             summary.PrimaryScore = bestScore;
             summary.PrimaryArchetypeId = primary.Id;
+            summary.Maturity = GetMaturity(bestScore);
+            for (int i = 0; i < primary.Tags.Count; i++)
+            {
+                var w = primary.Tags[i];
+                if (w != null && !string.IsNullOrEmpty(w.Tag))
+                    summary.PrimaryTags.Add(new TraitTagWeight { Tag = w.Tag, Weight = w.Weight });
+            }
 
             TraitArchetypeSpec secondary = null;
             int secondaryScore = 0;

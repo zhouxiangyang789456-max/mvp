@@ -20,6 +20,22 @@ namespace Mvp.Progression
         public TraitStackPolicy StackPolicy;
         public List<TraitEffect> Effects = new List<TraitEffect>();
         public List<string> Tags = new List<string>();
+
+        [System.NonSerialized] HashSet<string> _tagSet;
+
+        /// <summary>惰性构建的标签 HashSet;HasTag 查询降 O(1)。</summary>
+        internal HashSet<string> EnsureTagSet()
+        {
+            if (_tagSet == null)
+            {
+                var set = new HashSet<string>();
+                if (Tags != null)
+                    for (int i = 0; i < Tags.Count; i++)
+                        if (!string.IsNullOrEmpty(Tags[i])) set.Add(Tags[i]);
+                _tagSet = set;
+            }
+            return _tagSet;
+        }
     }
 
     [Serializable]

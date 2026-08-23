@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Mvp.CommanderSelect;
 using Mvp.Progression;
 
 namespace Mvp.SettlementShop
@@ -25,6 +26,7 @@ namespace Mvp.SettlementShop
         readonly List<string> _activeCommanderIds = new List<string>();
         readonly HashSet<string> _activeCommanderIdSet = new HashSet<string>();
         readonly TraitOfferRollContext _rollContext;
+        bool _affinityDirty = true; // §11.1.3 仅在变更操作后重算 OwnedTraitTags + Affinity
         int _nextInstanceOrdinal;
 
         public IReadOnlyList<string> ActiveCommanderIds => _activeCommanderIds;
@@ -44,10 +46,11 @@ namespace Mvp.SettlementShop
         public SettlementShopSession(string sessionId, string rewardGrantId, int seed,
             int rewardGold, IEnumerable<string> activeCommanderIds,
             PlayerProgressionSnapshot progression,
-            TraitOfferRollContext rollContext = null)
+            TraitOfferRollContext rollContext = null, string selectedCommanderId = null)
         {
             if (progression == null) throw new ArgumentNullException(nameof(progression));
             _rollContext = rollContext ?? new TraitOfferRollContext();
+            BuildCommanderAffinityOverride(selectedCommanderId);
             SessionId = sessionId;
             RewardGrantId = rewardGrantId;
             RandomSeed = seed;
@@ -76,6 +79,40 @@ namespace Mvp.SettlementShop
             }
             State = ShopSessionState.Ready;
             RollOffers();
+        }
+
+        /// <summary>
+        /// §8.3 指挥官方向补强 DTO:组合根从 CommanderCatalog + TraitBuildAnalyzer.Archetypes
+        /// 构建一次;主方向 = AffinityArchetypeIds[0] 公式标签,副方向 = [1]。指挥官局内不变。
+        /// </summary>
+        void BuildCommanderAffinityOverride(string selectedCommanderId)
+        {
+            var affinity = new CommanderAffinityOverride();
+            if (!string.IsNullOrEmpty(selectedCommanderId))
+            {
+                var commander = CommanderCatalog.GetById(selectedCommanderId);
+                if (commander != null)
+                {
+                    affinity.CommanderId = commander.Id;
+                    var archetypes = TraitBuildAnalyzer.Archetypes;
+                    for (int i = 0; i < commander.AffinityArchetypeIds.Count; i++)
+                    {
+                        string archetypeId = commander.AffinityArchetypeIds[i];
+                        var target = i == 0 ? affinity.MainTags : affinity.SubTags;
+                        for (int a = 0; a < archetypes.Count; a++)
+                        {
+                            var spec = archetypes[a];
+                            if (spec == null || spec.Id != archetypeId || spec.Tags == null) continue;
+                            for (int t = 0; t < spec.Tags.Count; t++)
+                            {
+                                var w = spec.Tags[t];
+                                if (w != null && !string.IsNullOrEmpty(w.Tag)) target.Add(w.Tag);
+                            }
+                        }
+                    }
+                }
+            }
+            _rollContext.CommanderAffinity = affinity;
         }
 
         public TraitCardInstance GetCard(string instanceId)
@@ -109,6 +146,7 @@ namespace Mvp.SettlementShop
             };
             _cards.Add(card.InstanceId, card);
             _inventoryIds.Add(card.InstanceId);
+            _affinityDirty = true;
             MarkChanged(changes, card.InstanceId, null, offerIndex, true, true);
             return ShopOperationResult.Success;
         }
@@ -162,6 +200,7 @@ namespace Mvp.SettlementShop
             card.EquippedCommanderId = commanderId;
             card.EquippedSlotIndex = slot;
             loadout.TraitCardInstanceIds[slot] = instanceId;
+            _affinityDirty = true;
             MarkChanged(changes, instanceId, commanderId, -1, false, true);
             return ShopOperationResult.Success;
         }
@@ -182,6 +221,7 @@ namespace Mvp.SettlementShop
             card.EquippedCommanderId = null;
             card.EquippedSlotIndex = -1;
             _inventoryIds.Add(instanceId);
+            _affinityDirty = true;
             MarkChanged(changes, instanceId, commanderId, -1, false, true);
             return ShopOperationResult.Success;
         }
@@ -238,6 +278,7 @@ namespace Mvp.SettlementShop
             changes.ChangedCommanderIds.Add(sourceCommanderId);
             if (targetCommanderId != sourceCommanderId)
                 changes.ChangedCommanderIds.Add(targetCommanderId);
+            _affinityDirty = true;
             DirtyVersion++;
             return ShopOperationResult.Success;
         }
@@ -253,6 +294,7 @@ namespace Mvp.SettlementShop
             Gold += definition.SellPrice;
             _inventoryIds.Remove(instanceId);
             card.Location = TraitCardLocation.Sold;
+            _affinityDirty = true;
             MarkChanged(changes, instanceId, null, -1, true, true);
             return ShopOperationResult.Success;
         }
@@ -299,9 +341,16 @@ namespace Mvp.SettlementShop
         void RollOffers()
         {
             _rollContext.RefreshCount = RefreshCount;
-            RecomputeOwnedTags();
+            if (_affinityDirty)
+            {
+                RecomputeOwnedTags();
+                _rollContext.Affinity = TraitBuildAnalyzer.Analyze(_rollContext.OwnedTraitTags);
+                _affinityDirty = false;
+            }
+            var pool = new List<TraitCardDefinition>(TraitCatalog.Definitions.Count);
+            TraitShopDirector.BuildEligiblePool(TraitCatalog.Definitions, _activeCommanderIdSet, pool);
             var rolled = TraitShopDirector.Roll(RandomSeed + RefreshCount * 7919,
-                _rollContext, TraitCatalog.Definitions, Offers.Length);
+                _rollContext, pool, Offers.Length);
             for (int i = 0; i < Offers.Length; i++)
             {
                 var definition = i < rolled.Length ? rolled[i] : null;

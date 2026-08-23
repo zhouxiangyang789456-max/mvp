@@ -87,7 +87,8 @@ namespace Mvp.Battle.UI
                 RewardGrantId = _result.RewardGrantId,
                 RandomSeed = _result.ShopRandomSeed,
                 RewardGold = _result.RewardGold,
-                RollContext = rollContext
+                RollContext = rollContext,
+                SelectedCommanderId = BattleStartContext.SelectedCommander?.Id
             };
             var roster = BattleStartContext.ExpeditionRoster;
             if (roster != null)
