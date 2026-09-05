@@ -2,6 +2,13 @@ using System.Collections.Generic;
 
 namespace Mvp.Shared
 {
+    public enum CommanderTroopBranch
+    {
+        Infantry,
+        Tank,
+        Ranged
+    }
+
     /// <summary>Static definition of a commander (selectable on CommanderSelectScene).</summary>
     public sealed class CommanderDefinition
     {
@@ -24,7 +31,28 @@ namespace Mvp.Shared
         public int CurrentHealth;
         public string PortraitAssetId;
         public string MapPortraitAssetId;
+        public CommanderTroopBranch TroopBranch;
         public List<string> Traits = new List<string>();
         public List<StartingUnitEntry> StartingUnits = new List<StartingUnitEntry>();
+
+        public bool HasValidSingleTypeStartingArmy()
+        {
+            if (StartingUnits == null || StartingUnits.Count != 1) return false;
+            var entry = StartingUnits[0];
+            if (entry == null || entry.Count <= 0 || entry.Count > 9 ||
+                entry.MembersPerSlot <= 0 || entry.MembersPerSlot > 3) return false;
+
+            switch (TroopBranch)
+            {
+                case CommanderTroopBranch.Infantry:
+                    return entry.UnitType == UnitType.Infantry;
+                case CommanderTroopBranch.Tank:
+                    return entry.UnitType == UnitType.Tank;
+                case CommanderTroopBranch.Ranged:
+                    return entry.UnitType == UnitType.RocketArtillery;
+                default:
+                    return false;
+            }
+        }
     }
 }

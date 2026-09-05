@@ -77,6 +77,14 @@ namespace Mvp.Battle.Units
 
         /// <summary>Issues a move command, optionally clamped by a group speed cap.</summary>
         public bool CommandMove(UnitView unit, Vector2Int targetCell, float speedLimit)
+            => CommandMove(unit, targetCell, speedLimit, Vector2Int.zero);
+
+        /// <summary>
+        /// Issues a move command with an optional final facing (8-direction grid vector).
+        /// When facing is non-zero the unit smoothly turns to that heading after arrival.
+        /// </summary>
+        public bool CommandMove(UnitView unit, Vector2Int targetCell, float speedLimit,
+            Vector2Int facing)
         {
             if (BattleSimulationState.IsFrozen) return false;
             var grid = BattleGridController.Instance;
@@ -88,13 +96,18 @@ namespace Mvp.Battle.Units
             if (combat != null) combat.CancelCombat(unit);
 
             var data = unit.Data;
-            if (data.State == UnitState.Dead) return false;
+            if (data.State == UnitState.Dead || data.ExitState != UnitExitState.Active) return false;
             if (!grid.InBounds(targetCell) || !grid.IsWalkable(targetCell))
             {
                 InvalidFeedback(unit);
                 return false;
             }
-            if (targetCell == data.GridPosition) return true;
+            if (targetCell == data.GridPosition)
+            {
+                if (facing != Vector2Int.zero)
+                    unit.SetFacingDirection(new Vector3(facing.x, 0f, facing.y));
+                return true;
+            }
             if (grid.IsOccupied(targetCell))
             {
                 InvalidFeedback(unit);
@@ -109,6 +122,49 @@ namespace Mvp.Battle.Units
                 return false;
             }
 
+            return BeginMoveWithPath(unit, targetCell, speedLimit, facing, _pathBuffer);
+        }
+
+        /// <summary>
+        /// Starts a move from a path already validated by the commander group. This keeps
+        /// atomic formation validation without running the same A* search a second time.
+        /// </summary>
+        public bool CommandMoveWithPath(UnitView unit, Vector2Int targetCell, float speedLimit,
+            Vector2Int facing, IReadOnlyList<Vector2Int> path)
+        {
+            if (BattleSimulationState.IsFrozen) return false;
+            var grid = BattleGridController.Instance;
+            if (unit == null || unit.Data == null || grid == null || path == null) return false;
+            var data = unit.Data;
+            if (data.State == UnitState.Dead || data.ExitState != UnitExitState.Active ||
+                !grid.InBounds(targetCell) || !grid.IsWalkable(targetCell)) return false;
+            if (targetCell == data.GridPosition)
+            {
+                if (facing != Vector2Int.zero)
+                    unit.SetFacingDirection(new Vector3(facing.x, 0f, facing.y));
+                return true;
+            }
+            if (grid.IsOccupied(targetCell) ||
+                !IsReusablePath(path, data.GridPosition, targetCell))
+                return false;
+
+            var combat = UnitCombatController.Instance;
+            if (combat != null) combat.CancelCombat(unit);
+            return BeginMoveWithPath(unit, targetCell, speedLimit, facing, path);
+        }
+
+        public static bool IsReusablePath(IReadOnlyList<Vector2Int> path,
+            Vector2Int start, Vector2Int target)
+        {
+            return path != null && path.Count >= 2 && path[0] == start &&
+                path[path.Count - 1] == target;
+        }
+
+        bool BeginMoveWithPath(UnitView unit, Vector2Int targetCell, float speedLimit,
+            Vector2Int facing, IReadOnlyList<Vector2Int> path)
+        {
+            var data = unit.Data;
+
             MoveState ms;
             if (!_moveStates.TryGetValue(unit, out ms))
             {
@@ -117,9 +173,11 @@ namespace Mvp.Battle.Units
             }
             ms.Cells.Clear();
             // output[0] is the start cell; waypoints are the rest.
-            for (int i = 1; i < _pathBuffer.Count; i++) ms.Cells.Add(_pathBuffer[i]);
+            for (int i = 1; i < path.Count; i++) ms.Cells.Add(path[i]);
             ms.Index = 0;
             ms.Speed = speedLimit > 0f ? speedLimit : 0f;
+            ms.HasFinalFacing = facing != Vector2Int.zero;
+            ms.FinalFacing = ms.HasFinalFacing ? new Vector3(facing.x, 0f, facing.y) : Vector3.zero;
 
             data.CurrentCommand.Type = UnitCommandType.Move;
             data.CurrentCommand.TargetPosition = GridToWorldWithElevation(targetCell);
@@ -204,20 +262,24 @@ namespace Mvp.Battle.Units
                 {
                     data.State = UnitState.Idle;
                     data.CurrentCommand.Type = UnitCommandType.None;
+                    if (ms.HasFinalFacing) unit.SetFacingDirection(ms.FinalFacing);
                 }
                 return;
             }
 
             pos.x += dx / dist * step;
             pos.z += dz / dist * step;
-            pos.y = Mathf.MoveTowards(pos.y, target.y, step);
+            pos.y = GetSafeTraversalElevation(data.GridPosition, cell);
             unit.transform.position = pos;
+            unit.FaceDirection(target - pos);
         }
 
         bool CanEnterCell(UnitView unit, Vector2Int cell)
         {
             var grid = BattleGridController.Instance;
             if (grid == null || unit == null || unit.Data == null) return false;
+            // Building footprint cells are blocked: never enter them (阶段B).
+            if (grid.IsBlocked(cell)) return false;
             if (!grid.IsOccupied(cell)) return true;
 
             var selection = UnitSelectionController.Instance;
@@ -260,6 +322,16 @@ namespace Mvp.Battle.Units
             p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
             return p;
         }
+        /// <summary>Keeps a unit above both tile surfaces while crossing their border.</summary>
+        public static float GetSafeTraversalElevation(Vector2Int fromCell, Vector2Int toCell)
+        {
+            var grid = BattleGridController.Instance;
+            if (grid == null) return 0f;
+            float from = TerrainCatalog.GetElevation(grid.GetTerrain(fromCell));
+            float to = TerrainCatalog.GetElevation(grid.GetTerrain(toCell));
+            return Mathf.Max(from, to);
+        }
+
 
         void InvalidFeedback(UnitView unit)
         {
@@ -292,6 +364,8 @@ namespace Mvp.Battle.Units
             public readonly List<Vector2Int> Cells = new List<Vector2Int>();
             public int Index;
             public float Speed;
+            public bool HasFinalFacing;
+            public Vector3 FinalFacing;
         }
     }
 }

@@ -1,0 +1,104 @@
+Portal HDRP documentation
+Run demo:
+1. Open Knife/Portal HDRP/Demo with VFX/Scenes/Demo scene.
+2. Press play.
+Quick Start Guide to create portal:
+1. Find Knife/Portal HDRP/Prefabs/PortalTunnelStarter or Knife/Portal/Demo with
+VFX/Prefabs/PortalTunnel prefab.
+2. Drag’n’Drop the prefab on scene.
+This portal is very basic. You can add your own effects and animation to this.
+Components.
+PortalView is component that render scene on other side of portal.
+It contains:
+1. PlayerCamera – GameView Camera.
+2. PortalViewCamera – camera of other side of the portal. Must be child of PortalRoot2
+3. PortalViewResolution – resolution of RenderTexture of PortalViewCamera (Script automatically
+creates rendertexture and assign to camera, in scripting you can get this RT from
+PortalView.RenderTexture).
+4. PortalRoot1 – entry of portal.
+5. PortalRoot2 – entry of other side of the portal.
+PortalTransition is component that do transition of objects between portals. Object that will need transit
+should inherit IPortalTransient interface in any component of object’s components. Also, object must have
+rigibody (dynamic or kinematic) and collider to call OnTriggerEnter and OnTriggerExit events in
+PortalTransition component. Always you can use SimpleTransient component to create object Transient.
+It contains:
+1. EntryPlane – all transformations are doing with that transform. PortalTunnelStarter prefab use
+PortalMesh (quad).
+2. TransitThreshold – threshold of depth position (Z) to teleport object from one side to other side.
+3. PlaneSize – size of intersection plane to transit object to other side.
+4. Exit – PortalTransition of other side.
+5. GizmosColor – color of rectangle gizmo to visualize PlaneSize.
+6. IsPortalOpened – portal state. If it is not opened objects will not transit.
+
+PortalAnimation is component that plays animation on selected animator when PortalTransition will open
+or close.
+It contains:
+1. PortalAnimator – animator that will play open and close animation.
+2. OpenPortalAnimation – this animation will be played on portal open.
+3. ClosePortalAnimation – this animation will be played on portal close.
+4. PortalTransition – open/close events source.
+PortalPhysicsAffector is component that affects on physics object when PortalTransition will open or close.
+Repel on open and attract on close.
+It contains:
+1. PhysicsMask – mask that will be used in Physics.OverlapSphere function.
+2. Radius – affect radius.
+3. Force – max force of affect.
+4. DistanceCurve – curve of force by radius.
+5. PortalTransition – open/close events source.
+6. ApplyForceToClosestPointOnCollider – should be force applied to ClosestPointOnCollider or to
+center of mass. If true rigidbodies will have angular speed because force will be applied on
+some point instead of center of mass.
+PortalOptimization is component that will help you gain performance.
+It contains:
+1. CullRadius – culling sphere radius.
+2. PortalView – view that will be disabled or enabled.
+3. PortalTransition – open/close events source.
+4. CullCamera – culling camera (should be GameViewCamera)
+5. FrustumCulling – is portal rendering should be disabled by frustum culling of CullCamera.
+
+Shaders.
+Distortion, with that shader you can achieve space distortion by distortion texture.
+1. Alpha – alpha mask of distortion amount.
+2. Distrotion – distortion map (screen space uv offset).
+3. DistortionAmount – amount of distortion.
+4. AlphaSoftness[1, 2] – remap alpha sliders.
+Portal Alpha is main shader of portal effect.
+1. Noise – main noise texture.
+2. Noise Speed – main noise UV animation speed.
+3. Displacement Noise – displacement noise texture.
+4. Mask Remap – main mask remapping parameters (min old, max old, min new, max new).
+5. Displacement Noise Speed – displacement noise UV animation speed.
+6. Gradient Mask Remap – background gradient color mask remapping parameters.
+7. Displacement Noise Remap – displacement noise remapping parameters.
+8. Glow Remap – glow remapping parameters.
+9. Color – main color.
+10. Back Gradient Color – second color.
+11. Noise Remap – main noise remapping parameters.
+12. Glow Intensity – intensity of glow.
+13. Glow Power – power of glow.
+14. Soft Intersection Distance – soft depth intersection distance.
+15. Hue Offset – hue offset value.
+16. Intensity – intensity of portal colors.
+Portal Border is simple shader with displacement animation.
+1. Color – color of surface.
+2. DisplacementNoise – displacement noise texture.
+3. DisplacementNoiseSpeed – speed of DisplacementNoise uv.
+4. DisplacementNoiseRemap – remap of noise values.
+5. HueOffset – hue offset of all colors.
+Triplanar is simple shader that samples Albedo texture by world vertex position.
+1. MainTex – albedo texture.
+2. Falloff – falloff of samples blending.
+3. Tiling – sampling tiling.
+4. Color – color of albedo.
+5. Smoothness – smoothness of surface.
+
+PortalView is shader that draws other side of the portal on surface.
+1. MainTex – screen RT of other side of the portal.
+2. DistortionMap[1, 2] – distortion textures, sampled in vertex XZ space.
+3. DistortionTiling[1, 2] – tiling of distortion textures.
+4. DistortionAmount[1, 2] – amount of distortion.
+5. DistortionSpeed[1, 2] – speed of distortion UV.
+6. TotalDistortionAmount – final distortion multiplier.
+7. DistortionDistanceSoftness – softness of distance gradient that controls distortion amount by
+distance.
+8. DistortionDistanceMul – multiplicator of distance from camera to surface.

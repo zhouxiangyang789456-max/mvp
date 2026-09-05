@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Map;
+using Mvp.Battle.Vision;
 using Mvp.Shared;
 using Mvp.Battle.Outcome;
 using Mvp.Battle.Traits;
@@ -26,6 +27,10 @@ namespace Mvp.Battle.Units
 
         readonly Dictionary<UnitView, CombatState> _combats =
             new Dictionary<UnitView, CombatState>();
+        // Fire cadence belongs to the attacker, not to a disposable attack command.
+        // It must survive retargeting/cancel-and-reissue so click spam cannot bypass CD.
+        readonly Dictionary<UnitView, float> _nextAttackAt =
+            new Dictionary<UnitView, float>();
         readonly List<UnitView> _toRemove = new List<UnitView>();
         readonly List<Vector2Int> _pathBuffer = new List<Vector2Int>();
         readonly List<Vector2Int> _bestReach = new List<Vector2Int>();
@@ -85,8 +90,11 @@ namespace Mvp.Battle.Units
                 _combats[attacker] = cs;
             }
             cs.Target = target;
-            cs.Cooldown = 0f; // first shot fires immediately if already in range
             cs.CooldownDuration = ComputeCooldownDuration(attacker.Data);
+            float nextAttackAt;
+            cs.Cooldown = _nextAttackAt.TryGetValue(attacker, out nextAttackAt)
+                ? Mathf.Max(0f, nextAttackAt - Time.time)
+                : 0f;
             cs.RepathTimer = 0f;
             cs.Cells.Clear();
             cs.Index = 0;
@@ -98,6 +106,78 @@ namespace Mvp.Battle.Units
             data.CurrentCommand.TargetUnit = target.Data;
             data.State = UnitState.Chasing;
             return true;
+        }
+
+        /// <summary>
+        /// Stationary skill attack (远攻 single target): same as CommandAttack with
+        /// allowPursuit=false — the unit never leaves its cell to chase.
+        /// </summary>
+        public bool CommandSkillAttack(UnitView attacker, UnitView target)
+        {
+            if (attacker == null || target == null) return false;
+            return CommandAttack(attacker, target, false);
+        }
+
+        /// <summary>
+        /// One-shot area attack at a ground cell (远攻 area units, AreaRadius&gt;0). Damages
+        /// every opposing unit within AreaRadius of the cell and shows feedback. The
+        /// skill cooldown is managed by the group skill system, so this only applies the
+        /// hit and does not enter the normal per-unit chase state.
+        /// </summary>
+        public bool FireAtCell(UnitView attacker, Vector2Int cell)
+        {
+            if (BattleSimulationState.IsFrozen) return false;
+            if (attacker == null || attacker.Data == null || attacker.Data.Definition == null ||
+                attacker.Data.State == UnitState.Dead) return false;
+            if (attacker.Data.Definition.AreaRadius <= 0f) return false;
+            var grid = BattleGridController.Instance;
+            var spatial = BattleSpatialIndex.Instance;
+            if (grid == null || spatial == null) return false;
+            if (!grid.InBounds(cell)) return false;
+
+            var data = attacker.Data;
+            attacker.FaceTowards(GridWorldCenter(grid, cell));
+            attacker.PlayAttackAnimation();
+
+            int radius = Mathf.Max(1, Mathf.CeilToInt(data.Definition.AreaRadius));
+            var victims = new List<UnitView>(8);
+            spatial.QueryEnemiesChebyshev(cell, radius, data.Team, victims);
+            for (int i = 0; i < victims.Count; i++)
+            {
+                var target = victims[i];
+                if (target == null || target.Data == null || target.Data.State == UnitState.Dead ||
+                    target.Data.ExitState != UnitExitState.Active)
+                    continue;
+                int dmg = data.Definition.AttackPower;
+                dmg = Mathf.RoundToInt(dmg * TraitEffectService.GetAttackPowerMultiplier(data));
+                dmg = Mathf.RoundToInt(dmg * TraitEffectService.GetIncomingDamageMultiplier(target.Data));
+                if (dmg < 0) dmg = 0;
+                target.Data.CurrentHealth -= dmg;
+                if (target.Data.CurrentHealth < 0) target.Data.CurrentHealth = 0;
+                target.RefreshHealthBar();
+                target.FlashHit();
+            }
+            SpawnAreaFeedback(attacker, grid, cell);
+            return true;
+        }
+
+        static Vector3 GridWorldCenter(BattleGridController grid, Vector2Int cell)
+        {
+            var p = grid.GridToWorld(cell);
+            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            return p;
+        }
+
+        void SpawnAreaFeedback(UnitView attacker, BattleGridController grid, Vector2Int cell)
+        {
+            var pool = EffectPool.Instance;
+            if (pool == null) return;
+            var muzzle = attacker.transform.position + Vector3.up * 0.7f;
+            pool.Get(EffectType.MuzzleFlash, muzzle, Quaternion.identity, 0.12f);
+            var hitPos = GridWorldCenter(grid, cell) + Vector3.up * 0.5f;
+            pool.Get(EffectType.HitSpark, hitPos, Quaternion.identity, 0.25f);
+            pool.Get(EffectType.BulletTracer, Vector3.Lerp(muzzle, hitPos, 0.5f),
+                Quaternion.identity, 0.1f);
         }
 
         /// <summary>Ends any active combat for <paramref name="unit"/> (used by move command).</summary>
@@ -122,6 +202,14 @@ namespace Mvp.Battle.Units
             return unit != null && _combats.ContainsKey(unit);
         }
 
+        public UnitView GetTarget(UnitView attacker)
+        {
+            CombatState state;
+            return attacker != null && _combats.TryGetValue(attacker, out state)
+                ? state.Target
+                : null;
+        }
+
         void OnFastTick()
         {
             if (_combats.Count == 0) return;
@@ -140,7 +228,8 @@ namespace Mvp.Battle.Units
                 }
 
                 var target = cs.Target;
-                if (target == null || target.Data == null || target.Data.State == UnitState.Dead)
+                if (target == null || target.Data == null || target.Data.State == UnitState.Dead ||
+                    target.Data.ExitState != UnitExitState.Active)
                 {
                     EndCombat(attacker);
                     _toRemove.Add(attacker);
@@ -149,6 +238,7 @@ namespace Mvp.Battle.Units
 
                 if (InAttackRange(attacker, target))
                 {
+                    attacker.FaceTowards(target.transform.position);
                     if (attacker.Data.State != UnitState.Attacking)
                     {
                         attacker.Data.State = UnitState.Attacking;
@@ -160,6 +250,7 @@ namespace Mvp.Battle.Units
                     {
                         cs.CooldownDuration = ComputeCooldownDuration(attacker.Data);
                         cs.Cooldown = cs.CooldownDuration;
+                        _nextAttackAt[attacker] = Time.time + cs.CooldownDuration;
                         attacker.SetAttackCooldownFill(0f);
                         Fire(attacker, target);
                     }
@@ -193,12 +284,15 @@ namespace Mvp.Battle.Units
             var t = target.Data.GridPosition;
             int dx = Mathf.Abs(a.x - t.x);
             int dz = Mathf.Abs(a.y - t.y);
-            return Mathf.Max(dx, dz) <= attacker.Data.Definition.AttackRange + 0.001f;
+            return Mathf.Max(dx, dz) <= attacker.Data.Definition.AttackRangeMax + 0.001f;
         }
 
         void Fire(UnitView attacker, UnitView target)
         {
             if (BattleSimulationState.IsFrozen) return;
+            if (target == null || target.Data == null ||
+                target.Data.ExitState != UnitExitState.Active) return;
+            attacker.PlayAttackAnimation();
             var atk = attacker.Data;
             var tgt = target.Data;
             int dmg = atk.Definition != null ? atk.Definition.AttackPower : 0;
@@ -291,8 +385,10 @@ namespace Mvp.Battle.Units
             {
                 pos.x += dx / dist * step;
                 pos.z += dz / dist * step;
-                pos.y = Mathf.MoveTowards(pos.y, tpos.y, step);
+                pos.y = UnitMovementController.GetSafeTraversalElevation(
+                    data.GridPosition, cell);
                 attacker.transform.position = pos;
+                attacker.FaceDirection(tpos - pos);
             }
         }
 
@@ -423,5 +519,6 @@ namespace Mvp.Battle.Units
             public int Index;
             public bool AllowPursuit;
         }
+
     }
 }

@@ -18,12 +18,15 @@ namespace Mvp.Battle.Map.Generation
         Bridge = 7
     }
 
-    /// <summary>Intermediate building types (aw-map1 BUILDINGS).</summary>
+    /// <summary>
+    /// Intermediate building types (aw-map1 BUILDINGS). Named for the formal play
+    /// types (楼房 / 兵工厂) to avoid the old City/Factory/Hq ambiguity; there is no
+    /// separate HQ building in the MVP, so none is represented here.
+    /// </summary>
     public enum GeneratedBuilding
     {
         None = -1,
-        Hq = 0,
-        Factory = 1,
-        City = 2
+        House = 0,
+        Armory = 1
     }
 }

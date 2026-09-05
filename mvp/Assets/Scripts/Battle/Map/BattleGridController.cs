@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle;
 using Mvp.Battle.Map.Generation;
+using Mvp.Battle.Map.Decorations;
 using Mvp.Shared;
 
 namespace Mvp.Battle.Map
@@ -10,7 +11,8 @@ namespace Mvp.Battle.Map
     public enum BattleMapSource
     {
         TestMap,
-        Procedural
+        Procedural,
+        HandAuthored
     }
 
     /// <summary>
@@ -36,11 +38,20 @@ namespace Mvp.Battle.Map
         [SerializeField] BattleMapSource _mapSource = BattleMapSource.TestMap;
         [SerializeField] MapGenerationSettings _proceduralSettings = new MapGenerationSettings();
         [SerializeField] int _proceduralLevel = 1;
+        [Tooltip("When enabled by Random Map Tool, use the settings saved in this scene instead of a map profile supplied by the commander-select scene.")]
+        [SerializeField] bool _useAppliedToolSettings;
         [Tooltip("Fallback level->map rule profile used when the level-select scene did not supply one via BattleStartContext.")]
         [SerializeField] LevelMapGenerationProfile _proceduralProfile;
+        [SerializeField] HandAuthoredMapData _handMapOverride;
+        [Header("3D terrain")]
+        [SerializeField] bool _enable3DTerrain = true;
+        [SerializeField] TerrainPrefabCatalog _terrainPrefabCatalog;
 
         TerrainType[,] _terrain;
         readonly HashSet<Vector2Int> _occupied = new HashSet<Vector2Int>();
+        // Buildings mark their footprint cells blocked + occupied so pathfinding,
+        // movement, spawning and slot validation automatically avoid them (阶段B).
+        readonly HashSet<Vector2Int> _blocked = new HashSet<Vector2Int>();
         readonly List<BattleCellView> _cells = new List<BattleCellView>();
 
         public int Width { get { return _width; } }
@@ -60,10 +71,13 @@ namespace Mvp.Battle.Map
 
         TerrainType[,] ResolveMap()
         {
-            if (_mapSource == BattleMapSource.TestMap)
+            var effectiveSource = BattleStartContext.MapSourceOverride.HasValue
+                ? BattleStartContext.MapSourceOverride.Value : _mapSource;
+            if (effectiveSource == BattleMapSource.TestMap)
             {
                 BattleMapContext.LastGeneratedData = null;
                 BattleMapContext.LastIdentity = null;
+                BattleMapContext.LastHandMapData = null;
                 return TestBattleMapData.Create();
             }
 
@@ -76,14 +90,44 @@ namespace Mvp.Battle.Map
                 return GenerateAndStore(pending);
             }
 
-            // 2) Profile-driven: current level -> rule -> request. The pre-battle scene
-            //    supplies the profile; the battle scene serialized profile is a fallback.
-            var profile = BattleStartContext.MapProfile != null ? BattleStartContext.MapProfile : _proceduralProfile;
+            // 2) A map explicitly activated by HandMapBuilder must beat the Random Map Tool's
+            // serialized scene settings. Both tools can leave data in BattleScene, but the
+            // active hand-map config expresses the designer's most recent map choice.
+            var runtimeConfig = HandMapRuntimeConfig.Load();
+            var profile = BattleStartContext.MapProfile != null
+                ? BattleStartContext.MapProfile
+                : (_proceduralProfile != null ? _proceduralProfile : runtimeConfig != null ? runtimeConfig.ActiveProfile : null);
+            var configuredHandMap = profile != null && profile.HandMapOverride != null
+                ? profile.HandMapOverride
+                : runtimeConfig != null ? runtimeConfig.ActiveMap : null;
             int level = BattleStartContext.LevelIndex > 0 ? BattleStartContext.LevelIndex : _proceduralLevel;
+            if (effectiveSource == BattleMapSource.HandAuthored ||
+                (effectiveSource == BattleMapSource.Procedural && configuredHandMap != null))
+            {
+                var handMap = effectiveSource == BattleMapSource.HandAuthored && _handMapOverride != null ? _handMapOverride
+                    : configuredHandMap;
+                if (handMap != null)
+                {
+                    BattleMapContext.LastGeneratedData = null;
+                    BattleMapContext.LastIdentity = null;
+                    BattleMapContext.LastHandMapData = handMap;
+                    _width = Mathf.Max(1, handMap.Width);
+                    _height = Mathf.Max(1, handMap.Height);
+                    return HandMapBattleMapProvider.CreateBattleMap(handMap, _blocked);
+                }
+                Debug.LogError("[BattleGridController] HandAuthored selected without a HandMap; falling back to Procedural.");
+            }
+
+            // Random Map Tool's scene override applies only when no authored map was selected.
+            if (_useAppliedToolSettings)
+                return GenerateAndStore(BuildDefaultRequest());
+
+            // 3) Profile-driven procedural map.
+            BattleMapContext.LastHandMapData = null;
             if (profile != null)
                 return GenerateAndStore(profile.BuildRequest(level));
 
-            // 3) Serialized inline settings fallback (direct scene open / editor preview).
+            // 4) Serialized inline settings fallback (direct scene open / editor preview).
             return GenerateAndStore(BuildDefaultRequest());
         }
 
@@ -113,7 +157,8 @@ namespace Mvp.Battle.Map
                 ProfileVersion = 1,
                 RuleId = "default",
                 LevelIndex = _proceduralLevel,
-                SeedMode = SeedMode.LevelBased,
+                SeedMode = SeedMode.Fixed,
+                FixedSeed = _proceduralSettings != null ? _proceduralSettings.Seed : 20260818u,
                 Settings = _proceduralSettings
             };
         }
@@ -125,23 +170,33 @@ namespace Mvp.Battle.Map
 
         void BuildVisual()
         {
+            var catalog = _enable3DTerrain ? (_terrainPrefabCatalog != null
+                ? _terrainPrefabCatalog : Resources.Load<TerrainPrefabCatalog>(TerrainPrefabCatalog.ResourcePath)) : null;
+            uint visualSeed = BattleMapContext.LastGeneratedData != null
+                ? BattleMapContext.LastGeneratedData.Seed : 0x25D5EEDu;
+            int prefabCells = 0;
             var rootGo = new GameObject("GridVisual");
             rootGo.transform.SetParent(transform, false);
             rootGo.transform.localPosition = Vector3.zero;
 
-            // Dark base so the 2% tile inset reads as a grid line.
-            var baseGo = new GameObject("BaseGround");
-            baseGo.transform.SetParent(rootGo.transform, false);
-            baseGo.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
-            baseGo.transform.localScale = new Vector3(_width + 2f, _height + 2f, 1f);
-            baseGo.transform.localPosition = new Vector3(
-                (_width - 1) * 0.5f, -0.03f, (_height - 1) * 0.5f);
-            var baseSr = baseGo.AddComponent<SpriteRenderer>();
-            baseSr.sprite = SharedSprites.White;
-            baseSr.color = new Color(0.08f, 0.10f, 0.13f);
-            // Always behind the terrain tiles, otherwise the large quad's distance-sorted
-            // draw order would cover the rear tiles.
-            baseSr.sortingOrder = -10;
+            // The dark oversized base belongs to the legacy/procedural grid. A hand-authored
+            // 3D map already supplies its own edge and side geometry; keeping this quad would
+            // expose the extra +1-cell margin as a black frame around the authored terrain.
+            if (BattleMapContext.LastHandMapData == null)
+            {
+                var baseGo = new GameObject("BaseGround");
+                baseGo.transform.SetParent(rootGo.transform, false);
+                baseGo.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
+                baseGo.transform.localScale = new Vector3(_width + 2f, _height + 2f, 1f);
+                baseGo.transform.localPosition = new Vector3(
+                    (_width - 1) * 0.5f, -0.03f, (_height - 1) * 0.5f);
+                var baseSr = baseGo.AddComponent<SpriteRenderer>();
+                baseSr.sprite = SharedSprites.White;
+                baseSr.color = new Color(0.08f, 0.10f, 0.13f);
+                // Always behind the terrain tiles, otherwise the large quad's distance-sorted
+                // draw order would cover the rear tiles.
+                baseSr.sortingOrder = -10;
+            }
 
             _cells.Clear();
             for (int z = 0; z < _height; z++)
@@ -153,10 +208,65 @@ namespace Mvp.Battle.Map
                     go.transform.SetParent(rootGo.transform, false);
                     go.transform.position = GridToWorld(grid);
                     var view = go.AddComponent<BattleCellView>();
-                    view.Setup(grid, _terrain[z, x]);
+                    var handMap = BattleMapContext.LastHandMapData;
+                    if (handMap != null && handMap.HasGroundVisual(x, z))
+                        view.SetupLogicalOnly(grid, _terrain[z, x]);
+                    else
+                        view.Setup(grid, _terrain[z, x], catalog, visualSeed, BuildRoadMask(x, z));
+                    if (view.UsesPrefab) prefabCells++;
                     _cells.Add(view);
                 }
             }
+
+            for (int z = 0; z < _height; z++)
+            for (int x = 0; x < _width; x++)
+            {
+                var terrain = _terrain[z, x];
+                if (terrain != TerrainType.Road && terrain != TerrainType.Bridge) continue;
+                _cells[z * _width + x].ApplyConnections(BuildRoadMask(x, z));
+            }
+
+            if (BattleMapContext.LastHandMapData != null)
+                HandMapVisualRenderer.Render(BattleMapContext.LastHandMapData, rootGo.transform);
+            else
+            {
+                var decorationSpawner = gameObject.GetComponent<TerrainDecorationSpawner>();
+                if (decorationSpawner == null)
+                    decorationSpawner = gameObject.AddComponent<TerrainDecorationSpawner>();
+                decorationSpawner.Build(this, BattleMapContext.LastGeneratedData);
+            }
+            Debug.Log("[Terrain3D] prefabCells=" + prefabCells + " fallbackCells=" + (_cells.Count - prefabCells));
+        }
+
+        public bool HasEmbeddedTerrainDecorations(Vector2Int cell)
+        {
+            int index = cell.y * _width + cell.x;
+            return InBounds(cell) && index < _cells.Count && _cells[index].IncludesDecorations;
+        }
+
+        public void SetDecorationBase(Vector2Int cell, bool active)
+        {
+            if (!InBounds(cell)) return;
+            int index = cell.y * _width + cell.x;
+            if (index >= 0 && index < _cells.Count)
+                _cells[index].SetDecorationBase(active);
+        }
+
+        int BuildRoadMask(int x, int z)
+        {
+            int mask = 0;
+            if (ConnectsToRoad(x, z - 1)) mask |= 1;
+            if (ConnectsToRoad(x + 1, z)) mask |= 2;
+            if (ConnectsToRoad(x, z + 1)) mask |= 4;
+            if (ConnectsToRoad(x - 1, z)) mask |= 8;
+            return mask;
+        }
+
+        bool ConnectsToRoad(int x, int z)
+        {
+            if (x < 0 || x >= _width || z < 0 || z >= _height) return false;
+            var terrain = _terrain[z, x];
+            return terrain == TerrainType.Road || terrain == TerrainType.Bridge;
         }
 
         // ---- coordinate conversion -------------------------------------------------
@@ -199,12 +309,19 @@ namespace Mvp.Battle.Map
 
         public bool IsWalkable(Vector2Int c)
         {
-            return InBounds(c) && TerrainCatalog.IsWalkable(_terrain[c.y, c.x]);
+            return InBounds(c) && TerrainCatalog.IsWalkable(_terrain[c.y, c.x]) &&
+                !_blocked.Contains(c);
         }
 
         public bool IsOccupied(Vector2Int c)
         {
             return _occupied.Contains(c);
+        }
+
+        /// <summary>True when the cell is inside a building footprint (阶段B).</summary>
+        public bool IsBlocked(Vector2Int c)
+        {
+            return _blocked.Contains(c);
         }
 
         public TerrainType GetTerrain(Vector2Int c)
@@ -226,9 +343,22 @@ namespace Mvp.Battle.Map
             else _occupied.Remove(c);
         }
 
+        /// <summary>
+        /// Marks a cell as a building footprint cell (blocked + occupied). Blocked cells
+        /// are unwalkable and cannot be occupied by units; used by BuildingRegistry on
+        /// register/destroy. (阶段B)
+        /// </summary>
+        public void SetBlocked(Vector2Int c, bool blocked)
+        {
+            if (blocked) _blocked.Add(c);
+            else _blocked.Remove(c);
+            SetOccupied(c, blocked);
+        }
+
         public void ClearOccupancy()
         {
             _occupied.Clear();
+            _blocked.Clear();
         }
     }
 }

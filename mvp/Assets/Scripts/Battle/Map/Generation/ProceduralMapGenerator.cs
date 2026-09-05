@@ -14,7 +14,7 @@ namespace Mvp.Battle.Map.Generation
     /// </summary>
     public static class ProceduralMapGenerator
     {
-        public const int GeneratorVersion = 1;
+        public const int GeneratorVersion = 2;
 
         public static GeneratedMapData Generate(MapGenerationSettings settings)
         {
@@ -80,15 +80,19 @@ namespace Mvp.Battle.Map.Generation
                 buildings = EmptyBuildings(w, h);
                 if (mirror)
                 {
+                    // Mirror counts are per side: place the full requested count on the
+                    // left half, then mirror terrain + buildings + roads to the right half.
                     PlaceBuildingsMirror(grid, buildings, w, h, rng, settings);
-                    ConnectRoadsFromHq(grid, buildings, w, h, settings.BridgeSpan);
+                    if (settings.Roads)
+                        ConnectRoads(grid, buildings, w, h, settings.BridgeSpan);
                     grid = Mirror180(grid, w, h);
                     buildings = Mirror180(buildings, w, h);
                 }
                 else
                 {
                     PlaceBuildingsFree(grid, buildings, w, h, rng, settings);
-                    ConnectRoadsFromHq(grid, buildings, w, h, settings.BridgeSpan);
+                    if (settings.Roads)
+                        ConnectRoads(grid, buildings, w, h, settings.BridgeSpan);
                 }
             }
 
@@ -109,7 +113,7 @@ namespace Mvp.Battle.Map.Generation
                 for (int x = 0; x < w; x++)
                     stats[(int)grid[y, x]]++;
 
-            var buildingStats = new int[3];
+            var buildingStats = new int[2];
             if (buildings != null)
             {
                 for (int y = 0; y < h; y++)
@@ -132,6 +136,7 @@ namespace Mvp.Battle.Map.Generation
                 TerrainStats = stats,
                 BuildingStats = buildingStats
             };
+            data.BuildingReport = AnalyzeBuildingPlacement(data, settings);
             data.MapHash = GeneratedMapData.ComputeHash(data);
             return data;
         }
@@ -372,9 +377,14 @@ namespace Mvp.Battle.Map.Generation
             return b;
         }
 
+        /// <summary>
+        /// Buildings may only sit on plain terrain. Not beach, not road, not forest,
+        /// not any water/mountain type (建筑平原约束). The runtime registry enforces the
+        /// same rule as a final defense.
+        /// </summary>
         static bool IsBuildable(GeneratedTerrain t)
         {
-            return t == GeneratedTerrain.Plain || t == GeneratedTerrain.Beach || t == GeneratedTerrain.Road;
+            return t == GeneratedTerrain.Plain;
         }
 
         static int Manhattan((int x, int y) a, (int x, int y) b)
@@ -395,159 +405,78 @@ namespace Mvp.Battle.Map.Generation
             return null;
         }
 
-        // Free-mode buildings: HQ + factories + cities scattered by distance rings.
+        /// <summary>True when the cell is inside the 1-cell map margin so roads can reach it.</summary>
+        static bool InMapMargin(int x, int y, int w, int h)
+        {
+            return x >= 1 && y >= 1 && x < w - 1 && y < h - 1;
+        }
+
+        /// <summary>Free-mode buildings: armories + houses scattered with min spacing.</summary>
         static void PlaceBuildingsFree(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
             int w, int h, SeededRandom rng, MapGenerationSettings opts)
         {
             var spots = new List<(int x, int y)>();
 
-            bool DistOk((int x, int y) anchor, int minD, int maxD, int spacing, int x, int y)
+            bool SpacingOk((int x, int y) p, int minSpacing)
             {
-                var p = (x, y);
-                if (!IsBuildable(grid[y, x])) return false;
-                int da = Manhattan(anchor, p);
-                if (da < minD || da > maxD) return false;
                 for (int i = 0; i < spots.Count; i++)
-                    if (Manhattan(spots[i], p) < spacing) return false;
+                    if (Manhattan(spots[i], p) < minSpacing) return false;
                 return true;
             }
 
-            var hq = TryFindSpot(grid, bld, w, h, rng, (x, y) => IsBuildable(grid[y, x]));
-            if (hq == null) return;
-            var hqPos = hq.Value;
-            bld[hqPos.y, hqPos.x] = GeneratedBuilding.Hq;
-            spots.Add(hqPos);
-
-            for (int i = 0; i < opts.Factories; i++)
+            // Armories are strategic: fewer, more spread out.
+            for (int i = 0; i < opts.ArmoryCount; i++)
             {
-                var f = TryFindSpot(grid, bld, w, h, rng,
-                    (x, y) => DistOk(hqPos, 2, 8, 2, x, y));
-                if (f != null) { bld[f.Value.y, f.Value.x] = GeneratedBuilding.Factory; spots.Add(f.Value); }
+                var f = TryFindSpot(grid, bld, w, h, rng, (x, y) =>
+                    InMapMargin(x, y, w, h) && IsBuildable(grid[y, x]) && SpacingOk((x, y), 3));
+                if (f != null) { bld[f.Value.y, f.Value.x] = GeneratedBuilding.Armory; spots.Add(f.Value); }
             }
-            for (int j = 0; j < opts.Cities; j++)
+            // Houses are numerous: tighter spacing, placed after armories.
+            for (int j = 0; j < opts.HouseCount; j++)
             {
-                var c = TryFindSpot(grid, bld, w, h, rng,
-                    (x, y) => DistOk(hqPos, 2, 14, 2, x, y));
-                if (c != null) { bld[c.Value.y, c.Value.x] = GeneratedBuilding.City; spots.Add(c.Value); }
+                var c = TryFindSpot(grid, bld, w, h, rng, (x, y) =>
+                    InMapMargin(x, y, w, h) && IsBuildable(grid[y, x]) && SpacingOk((x, y), 2));
+                if (c != null) { bld[c.Value.y, c.Value.x] = GeneratedBuilding.House; spots.Add(c.Value); }
             }
         }
 
-        // Mirror-mode buildings (AWBW-like balanced layout), placed on the left half only.
+        /// <summary>
+        /// Mirror-mode buildings, placed on the left half only (the caller mirrors).
+        /// Counts are per side, so both halves get identical armory/house layouts.
+        /// </summary>
         static void PlaceBuildingsMirror(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
             int w, int h, SeededRandom rng, MapGenerationSettings opts)
         {
             int halfW = w / 2;
-            bool cornerBl = rng.NextFloat() < 0.5f;
-
-            bool HasRingNeighbors(int x, int y)
-            {
-                int cnt = 0;
-                for (int dy = -4; dy <= 4 && cnt < 2; dy++)
-                {
-                    for (int dx = -4; dx <= 4; dx++)
-                    {
-                        int d = Math.Abs(dx) + Math.Abs(dy);
-                        if (d < 2 || d > 4) continue;
-                        int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || ny < 0 || nx >= halfW || ny >= h) continue;
-                        if (IsBuildable(grid[ny, nx])) cnt++;
-                    }
-                }
-                return cnt >= 2;
-            }
-
-            (int x, int y)? FindHq()
-            {
-                var stages = new[] { 0.18, 0.30, 1.0 };
-                for (int si = 0; si < stages.Length; si++)
-                {
-                    int sx = Math.Max(2, (int)(w * stages[si]));
-                    int sy = Math.Max(2, (int)(h * stages[si]));
-                    bool needRing = si < stages.Length - 1;
-                    for (int t = 0; t < 800; t++)
-                    {
-                        int x, y;
-                        if (cornerBl)
-                        {
-                            x = 1 + rng.NextInt(sx);
-                            y = (h - 1 - sy) + rng.NextInt(sy);
-                        }
-                        else
-                        {
-                            x = 1 + rng.NextInt(sx);
-                            y = 1 + rng.NextInt(sy);
-                        }
-                        if (x >= halfW) x = halfW - 1;
-                        if (!IsBuildable(grid[y, x])) continue;
-                        if (needRing && !HasRingNeighbors(x, y)) continue;
-                        return (x, y);
-                    }
-                }
-                return null;
-            }
-
-            var hq = FindHq();
-            if (hq == null) return;
-            var hqPos = hq.Value;
-            bld[hqPos.y, hqPos.x] = GeneratedBuilding.Hq;
-            var spots = new List<(int x, int y)> { hqPos };
-
             bool InLeft((int x, int y) p) => p.x < halfW;
+            bool InLeftMargin(int x, int y) => x >= 1 && y >= 1 && x < halfW - 1 && y < h - 1;
 
-            // stages: [minD, maxD, minX, spacing]; minX == int.MinValue means no central-band constraint.
-            bool PlaceWithStages(int[][] stages, GeneratedBuilding type)
+            var spots = new List<(int x, int y)>();
+
+            bool SpacingOk((int x, int y) p, int minSpacing)
             {
-                for (int i = 0; i < stages.Length; i++)
-                {
-                    var st = stages[i];
-                    var found = TryFindSpot(grid, bld, w, h, rng, (x, y) =>
-                    {
-                        var p = (x, y);
-                        if (!InLeft(p) || !IsBuildable(grid[y, x])) return false;
-                        if (st[2] != int.MinValue && x < st[2]) return false;
-                        int da = Manhattan(hqPos, p);
-                        if (da < st[0] || da > st[1]) return false;
-                        for (int m = 0; m < spots.Count; m++)
-                            if (Manhattan(spots[m], p) < st[3]) return false;
-                        return true;
-                    }, 800);
-                    if (found != null)
-                    {
-                        var f = found.Value;
-                        bld[f.y, f.x] = type;
-                        spots.Add(f);
-                        return true;
-                    }
-                }
-                return false;
+                for (int i = 0; i < spots.Count; i++)
+                    if (Manhattan(spots[i], p) < minSpacing) return false;
+                return true;
             }
 
-            // 2 factories near HQ.
-            for (int i = 0; i < 2; i++)
+            for (int i = 0; i < opts.ArmoryCount; i++)
             {
-                PlaceWithStages(new[]
+                var f = TryFindSpot(grid, bld, w, h, rng, (x, y) =>
                 {
-                    new[] { 2, 4, int.MinValue, 2 }, new[] { 2, 6, int.MinValue, 2 },
-                    new[] { 2, 9, int.MinValue, 2 }, new[] { 2, 12, int.MinValue, 2 }
-                }, GeneratedBuilding.Factory);
+                    var p = (x, y);
+                    return InLeft(p) && InLeftMargin(x, y) && IsBuildable(grid[y, x]) && SpacingOk(p, 3);
+                }, 800);
+                if (f != null) { bld[f.Value.y, f.Value.x] = GeneratedBuilding.Armory; spots.Add(f.Value); }
             }
-            // 3 safe cities around HQ (opening economy).
-            for (int j = 0; j < 3; j++)
+            for (int j = 0; j < opts.HouseCount; j++)
             {
-                PlaceWithStages(new[]
+                var c = TryFindSpot(grid, bld, w, h, rng, (x, y) =>
                 {
-                    new[] { 3, 6, int.MinValue, 2 }, new[] { 3, 8, int.MinValue, 2 },
-                    new[] { 3, 10, int.MinValue, 2 }, new[] { 3, 14, int.MinValue, 2 }
-                }, GeneratedBuilding.City);
-            }
-            // 2 contested cities near the central band (mid-game objectives).
-            for (int k = 0; k < 2; k++)
-            {
-                PlaceWithStages(new[]
-                {
-                    new[] { 6, 14, halfW - 8, 3 }, new[] { 4, 16, halfW - 10, 3 },
-                    new[] { 3, 18, halfW - 14, 3 }, new[] { 3, 20, int.MinValue, 3 }
-                }, GeneratedBuilding.City);
+                    var p = (x, y);
+                    return InLeft(p) && InLeftMargin(x, y) && IsBuildable(grid[y, x]) && SpacingOk(p, 2);
+                }, 800);
+                if (c != null) { bld[c.Value.y, c.Value.x] = GeneratedBuilding.House; spots.Add(c.Value); }
             }
         }
 
@@ -569,11 +498,18 @@ namespace Mvp.Battle.Map.Generation
             return cells;
         }
 
-        static bool SegmentFeasible(GeneratedTerrain[,] grid, List<(int x, int y)> cells, int maxBridgeSpan)
+        /// <summary>
+        /// A road segment is feasible when no cell is a building cell (roads may only
+        /// connect to a building's outer adjacent cells, never cover the building itself)
+        /// and every non-pavable cell is a bridgeable river span.
+        /// </summary>
+        static bool SegmentFeasible(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
+            List<(int x, int y)> cells, int maxBridgeSpan)
         {
             for (int i = 0; i < cells.Count; i++)
             {
                 int x = cells[i].x, y = cells[i].y;
+                if (bld[y, x] != GeneratedBuilding.None) return false; // never pave a building cell
                 var t = grid[y, x];
                 if (t == GeneratedTerrain.Plain || t == GeneratedTerrain.Beach ||
                     t == GeneratedTerrain.Road || t == GeneratedTerrain.Bridge) continue;
@@ -587,68 +523,88 @@ namespace Mvp.Battle.Map.Generation
             return true;
         }
 
-        static void SegmentCommit(GeneratedTerrain[,] grid, List<(int x, int y)> cells)
+        static void SegmentCommit(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
+            List<(int x, int y)> cells)
         {
             for (int k = 0; k < cells.Count; k++)
             {
                 int gx = cells[k].x, gy = cells[k].y;
+                if (bld[gy, gx] != GeneratedBuilding.None) continue; // never pave a building cell
                 if (grid[gy, gx] == GeneratedTerrain.River) grid[gy, gx] = GeneratedTerrain.Bridge;
                 else if (grid[gy, gx] != GeneratedTerrain.Bridge) grid[gy, gx] = GeneratedTerrain.Road;
             }
         }
 
-        static bool PaveSegment(GeneratedTerrain[,] grid, List<(int x, int y)> cells, int maxBridgeSpan)
+        static bool PaveSegment(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
+            List<(int x, int y)> cells, int maxBridgeSpan)
         {
-            if (!SegmentFeasible(grid, cells, maxBridgeSpan)) return false;
-            SegmentCommit(grid, cells);
+            if (!SegmentFeasible(grid, bld, cells, maxBridgeSpan)) return false;
+            SegmentCommit(grid, bld, cells);
             return true;
         }
 
-        static void ConnectRoadsFromHq(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
+        /// <summary>Paves a horizontal-then-vertical (or vertical-then-horizontal) road.</summary>
+        static bool TryRoad(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
+            int x0, int y0, int x1, int y1, int maxBridgeSpan)
+        {
+            if (x0 == x1 || y0 == y1)
+                return PaveSegment(grid, bld, LineCells(x0, y0, x1, y1), maxBridgeSpan);
+
+            var c1h = LineCells(x0, y0, x1, y0);
+            var c1v = LineCells(x1, y0, x1, y1);
+            if (SegmentFeasible(grid, bld, c1h, maxBridgeSpan) && SegmentFeasible(grid, bld, c1v, maxBridgeSpan))
+            {
+                SegmentCommit(grid, bld, c1h);
+                SegmentCommit(grid, bld, c1v);
+                return true;
+            }
+
+            var c2v = LineCells(x0, y0, x0, y1);
+            var c2h = LineCells(x0, y1, x1, y1);
+            if (SegmentFeasible(grid, bld, c2v, maxBridgeSpan) && SegmentFeasible(grid, bld, c2h, maxBridgeSpan))
+            {
+                SegmentCommit(grid, bld, c2v);
+                SegmentCommit(grid, bld, c2h);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Connects every building to the first placed building via roads. Roads terminate
+        /// at a cardinal neighbor of each target building (never on the building cell itself)
+        /// and are skipped when no feasible path exists.
+        /// </summary>
+        static void ConnectRoads(GeneratedTerrain[,] grid, GeneratedBuilding[,] bld,
             int w, int h, int maxBridgeSpan)
         {
-            int? hqX = null, hqY = null;
-            for (int y = 0; y < h && hqX == null; y++)
+            int ax = -1, ay = -1;
+            for (int y = 0; y < h && ax < 0; y++)
             {
                 for (int x = 0; x < w; x++)
                 {
-                    if (bld[y, x] == GeneratedBuilding.Hq) { hqX = x; hqY = y; break; }
+                    if (bld[y, x] != GeneratedBuilding.None) { ax = x; ay = y; break; }
                 }
             }
-            if (hqX == null) return;
-            int hqx = hqX.Value, hqy = hqY.Value;
+            if (ax < 0) return; // no buildings, nothing to connect
 
-            bool TryRoad(int x0, int y0, int x1, int y1)
-            {
-                if (x0 == x1 || y0 == y1)
-                    return PaveSegment(grid, LineCells(x0, y0, x1, y1), maxBridgeSpan);
-
-                var c1h = LineCells(x0, y0, x1, y0);
-                var c1v = LineCells(x1, y0, x1, y1);
-                if (SegmentFeasible(grid, c1h, maxBridgeSpan) && SegmentFeasible(grid, c1v, maxBridgeSpan))
-                {
-                    SegmentCommit(grid, c1h);
-                    SegmentCommit(grid, c1v);
-                    return true;
-                }
-
-                var c2v = LineCells(x0, y0, x0, y1);
-                var c2h = LineCells(x0, y1, x1, y1);
-                if (SegmentFeasible(grid, c2v, maxBridgeSpan) && SegmentFeasible(grid, c2h, maxBridgeSpan))
-                {
-                    SegmentCommit(grid, c2v);
-                    SegmentCommit(grid, c2h);
-                    return true;
-                }
-                return false;
-            }
+            // Cardinal neighbors of the target building: the road ends on one of these.
+            int[,] dirs = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 
             for (int y2 = 0; y2 < h; y2++)
             {
                 for (int x2 = 0; x2 < w; x2++)
                 {
-                    if (bld[y2, x2] == GeneratedBuilding.None || (x2 == hqx && y2 == hqy)) continue;
-                    TryRoad(hqx, hqy, x2, y2);
+                    if (bld[y2, x2] == GeneratedBuilding.None || (x2 == ax && y2 == ay)) continue;
+                    for (int d = 0; d < 4; d++)
+                    {
+                        int nx = x2 + dirs[d, 0];
+                        int ny = y2 + dirs[d, 1];
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        if (bld[ny, nx] != GeneratedBuilding.None) continue; // another building's cell
+                        if (nx == ax && ny == ay) continue;                  // the anchor itself
+                        if (TryRoad(grid, bld, ax, ay, nx, ny, maxBridgeSpan)) break;
+                    }
                 }
             }
         }
@@ -663,6 +619,43 @@ namespace Mvp.Battle.Map.Generation
                 for (int x = 0; x < w; x++)
                     if (result[y, x] == from) result[y, x] = to;
             return result;
+        }
+
+        // ---- building placement report ---------------------------------------
+
+        /// <summary>
+        /// Measures requested/placed counts and any illegal placement (non-plain,
+        /// out-of-bounds, overlapping) against the final terrain + buildings grids.
+        /// The new generator only places on Plain, so NonPlainCells should be zero.
+        /// </summary>
+        static BuildingPlacementReport AnalyzeBuildingPlacement(GeneratedMapData data,
+            MapGenerationSettings opts)
+        {
+            var report = new BuildingPlacementReport
+            {
+                RequestedHouse = Math.Max(0, opts.HouseCount),
+                RequestedArmory = Math.Max(0, opts.ArmoryCount)
+            };
+            if (data.Buildings == null) return report;
+
+            int w = data.Width;
+            int h = data.Height;
+            var seen = new HashSet<int>();
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    var b = data.Buildings[y, x];
+                    if (b == GeneratedBuilding.None) continue;
+                    if (b == GeneratedBuilding.House) report.PlacedHouse++;
+                    else if (b == GeneratedBuilding.Armory) report.PlacedArmory++;
+
+                    if (x < 0 || y < 0 || x >= w || y >= h) { report.OutOfBoundsCells++; continue; }
+                    if (!seen.Add(y * w + x)) { report.OverlapCells++; continue; }
+                    if (data.Terrain[y, x] != GeneratedTerrain.Plain) report.NonPlainCells++;
+                }
+            }
+            return report;
         }
     }
 }

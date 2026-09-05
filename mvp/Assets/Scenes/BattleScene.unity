@@ -4380,24 +4380,36 @@ MonoBehaviour:
   _proceduralSettings:
     Width: 16
     Height: 14
-    Seed: 20260818
+    Seed: 97057953
     SeaLevel: 0.36
     MountainLevel: 0.68
     ForestMoisture: 0.6
     Rivers: 1
     BridgeSpan: 3
     SmoothRounds: 2
-    Mirror: 1
+    Mirror: 0
     Buildings: 0
-    Factories: 2
-    Cities: 5
+    Roads: 1
+    HouseCount: 5
+    ArmoryCount: 2
     Ocean: 1
     Beach: 1
     River: 1
     Forest: 1
     Mountain: 1
+    EnableExtractionPortal: 1
+    ExtractionTimeLimitSeconds: 180
+    ExtractionZoneWidth: 2
+    ExtractionZoneHeight: 2
+    MinPortalPathDistanceFromPlayer: 6
+    MaxPortalPathDistanceFromPlayer: 22
+    PortalOpeningDelaySeconds: 1
   _proceduralLevel: 1
+  _useAppliedToolSettings: 1
   _proceduralProfile: {fileID: 0}
+  _handMapOverride: {fileID: 0}
+  _enable3DTerrain: 1
+  _terrainPrefabCatalog: {fileID: 0}
 --- !u!4 &1069075354
 Transform:
   m_ObjectHideFlags: 0
@@ -7726,6 +7738,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 59b9cf723bffe4b48ab08aa17f8cee06, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _showMiniMap: 0
 --- !u!114 &2052929272
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -5,10 +5,12 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using Mvp.Battle.Formation;
 using Mvp.Battle.Map;
+using Mvp.Battle.Economy;
 using Mvp.CommanderSelect;
 using Mvp.Shared;
 using Mvp.Battle.Commanders;
 using Mvp.Battle.Traits;
+using Mvp.Battle.Skills;
 
 namespace Mvp.Battle.UI
 {
@@ -23,12 +25,15 @@ namespace Mvp.Battle.UI
     /// </summary>
     public sealed class BattleUiController : MonoBehaviour
     {
+        [Header("Map UI")]
+        [SerializeField] bool _showMiniMap = false;
         public static BattleUiController Instance { get; private set; }
 
         // ---- cached UI ---------------------------------------------------------
 
         TextMeshProUGUI _nameText;
         TextMeshProUGUI _healthText;
+        TextMeshProUGUI _goldText;
         GameObject _commanderPanel;
         GameObject _cardBar;
         GameObject _formationPanel;
@@ -39,9 +44,10 @@ namespace Mvp.Battle.UI
         Button _portraitButton;
         GameObject _startBattleGo;
         Button _startBattleButton;
-        GameObject _editFormationGo;
         GameObject _confirmFormationGo;
         GameObject _cancelFormationGo;
+        BattleSkillBar _skillBar;
+        CommanderGroupRuntime _boundGroup;
 
         readonly TextMeshProUGUI[] _cardNames = new TextMeshProUGUI[6];
         readonly TextMeshProUGUI[] _cardCounts = new TextMeshProUGUI[6];
@@ -70,6 +76,8 @@ namespace Mvp.Battle.UI
                 CommanderGroupRegistry.Instance.CommanderInspected -= OnCommanderInspected;
                 CommanderGroupRegistry.Instance.CommanderInspectionClosed -= HideCommanderContext;
             }
+            if (BattleEconomyController.Instance != null)
+                BattleEconomyController.Instance.GoldChanged -= OnGoldChanged;
             if (Instance == this) Instance = null;
         }
 
@@ -86,6 +94,9 @@ namespace Mvp.Battle.UI
             BindMiniMap();
             BindPortrait();
             CreateStartBattleButton();
+            CreateGoldText();
+            CreateSkillBar();
+            BattleCursorController.Create(transform);
 
             PopulateCommander(commander);
             PopulateCardBar(commander);
@@ -95,6 +106,7 @@ namespace Mvp.Battle.UI
 
             StartCoroutine(AutoDeploy());
             StartCoroutine(BindCommanderGroups());
+            StartCoroutine(BindEconomy());
         }
 
         IEnumerator BindCommanderGroups()
@@ -153,8 +165,15 @@ namespace Mvp.Battle.UI
         void CreateCombatFormationControls()
         {
             if (_formationPanel == null) return;
-            _editFormationGo = CreateFormationCommandButton("EditFormationBtn", "调整阵型", OnBeginCombatFormationEdit);
-            _confirmFormationGo = CreateFormationCommandButton("ConfirmFormationBtn", "确认重整", OnConfirmCombatFormationEdit);
+            var bottomCommandRect = _formationPanel.GetComponent<RectTransform>();
+            if (bottomCommandRect != null)
+            {
+                bottomCommandRect.anchorMin = new Vector2(0.5f, 0f);
+                bottomCommandRect.anchorMax = new Vector2(0.5f, 0f);
+                bottomCommandRect.pivot = new Vector2(0f, 0f);
+                bottomCommandRect.anchoredPosition = new Vector2(-306f, 20f);
+            }
+            _confirmFormationGo = CreateFormationCommandButton("ConfirmFormationBtn", "确认坚守", OnConfirmCombatFormationEdit);
             _cancelFormationGo = CreateFormationCommandButton("CancelFormationBtn", "取消", OnCancelCombatFormationEdit);
             RefreshCombatFormationControls();
         }
@@ -193,18 +212,25 @@ namespace Mvp.Battle.UI
             bool combat = BattlePhaseState.Current == BattlePhase.Combat;
             var formation = FormationController.Instance;
             bool editing = formation != null && formation.IsCombatEditing;
-            if (_editFormationGo != null) _editFormationGo.SetActive(combat && !editing);
             if (_confirmFormationGo != null) _confirmFormationGo.SetActive(combat && editing);
             if (_cancelFormationGo != null) _cancelFormationGo.SetActive(combat && editing);
             for (int i = 0; i < _formationButtons.Length; i++)
                 if (_formationButtons[i] != null) _formationButtons[i].interactable = !combat || editing;
             var panelRect = _formationPanel != null ? _formationPanel.GetComponent<RectTransform>() : null;
             if (panelRect != null)
-                panelRect.sizeDelta = new Vector2(panelRect.sizeDelta.x, combat ? (editing ? 336f : 276f) : 220f);
+                panelRect.sizeDelta = new Vector2(panelRect.sizeDelta.x, combat ? (editing ? 336f : 220f) : 220f);
         }
 
         void OnActiveGroupChanged(CommanderGroupRuntime group)
         {
+            // 指挥官切换清理：退出上一编队的常驻模式并清掉瞄准预览（验收风险 #6）。
+            if (_boundGroup != null && _boundGroup != group)
+            {
+                var skills = GroupSkillController.Instance;
+                if (skills != null) skills.CancelGroupSkillState(_boundGroup);
+            }
+            _boundGroup = group;
+
             if (group == null || group.Definition == null)
             {
                 HideCommanderContext();
@@ -215,6 +241,7 @@ namespace Mvp.Battle.UI
             var formation = FormationController.Instance;
             if (formation != null) formation.SyncFormationContext(group.Formation);
             RefreshFormationHighlight();
+            if (_skillBar != null) _skillBar.Bind(group);
 
             var status = BattleUiStatusText.Instance;
             if (status != null) status.SetStatus("当前指挥官：" + group.Definition.DisplayName);
@@ -237,6 +264,11 @@ namespace Mvp.Battle.UI
         {
             var panel = transform.Find("BattleUI/CommanderPanel");
             if (panel == null) return;
+            // Scale the whole commander information block proportionally to two thirds.
+            panel.localScale = new Vector3(2f / 3f, 2f / 3f, 1f);
+            var panelRect = panel as RectTransform;
+            if (panelRect != null)
+                panelRect.anchoredPosition += new Vector2(0f, -64f);
             _commanderPanel = panel.gameObject;
 
             _nameText = panel.Find("Name")?.GetComponent<TextMeshProUGUI>();
@@ -254,6 +286,8 @@ namespace Mvp.Battle.UI
         void BindCardBar()
         {
             var cardBar = transform.Find("BattleUI/CardBar");
+            if (cardBar != null)
+                cardBar.localScale = new Vector3(0.5f, 0.5f, 1f);
             _cardBar = cardBar != null ? cardBar.gameObject : null;
             for (int i = 0; i < _cardNames.Length; i++)
             {
@@ -276,31 +310,13 @@ namespace Mvp.Battle.UI
         {
             var formationPanel = transform.Find("BattleUI/FormationPanel");
             _formationPanel = formationPanel != null ? formationPanel.gameObject : null;
+            var panelImage = formationPanel != null ? formationPanel.GetComponent<Image>() : null;
+            if (panelImage != null) panelImage.raycastTarget = false;
             for (int i = 0; i < _formationButtons.Length; i++)
             {
                 var root = transform.Find("BattleUI/FormationPanel/FormationBtn" + (i + 1));
                 if (root == null) continue;
-
-                var img = root.GetComponent<Image>();
-                var btn = root.GetComponent<Button>();
-                if (btn == null) btn = root.gameObject.AddComponent<Button>();
-                if (img != null) btn.targetGraphic = img;
-
-                var label = root.Find("Label")?.GetComponent<TextMeshProUGUI>();
-                if (label != null)
-                {
-                    label.text = i == 0 ? "竖向" : i == 1 ? "横向" : "方形";
-                    label.font = ResolveFont(label.font);
-                }
-
-                FormationType type = i == 0 ? FormationType.Vertical
-                    : i == 1 ? FormationType.Horizontal
-                    : FormationType.Square;
-                int idx = i;
-                btn.onClick.AddListener(() => OnFormationClick(idx, type));
-
-                _formationButtons[i] = btn;
-                _formationImages[i] = img;
+                root.gameObject.SetActive(false);
             }
         }
 
@@ -308,6 +324,11 @@ namespace Mvp.Battle.UI
         {
             var minimap = transform.Find("BattleUI/MiniMapPanel");
             if (minimap == null) return;
+            if (!_showMiniMap)
+            {
+                minimap.gameObject.SetActive(false);
+                return;
+            }
 
             var mapArea = minimap.Find("MapArea");
             if (mapArea != null)
@@ -400,6 +421,57 @@ namespace Mvp.Battle.UI
             _startBattleButton = btn;
         }
 
+        // ---- gold display (阶段B) -----------------------------------------------
+
+        void CreateGoldText()
+        {
+            var go = new GameObject("GoldText", typeof(RectTransform), typeof(TextMeshProUGUI));
+            go.transform.SetParent(transform, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(240f, 40f);
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.anchoredPosition = new Vector2(-16f, -16f);
+
+            var label = go.GetComponent<TextMeshProUGUI>();
+            label.font = ResolveFont(null);
+            label.fontSize = 22f;
+            label.alignment = TextAlignmentOptions.Right;
+            label.color = new Color(1f, 0.9f, 0.45f, 1f);
+            _goldText = label;
+            RefreshGoldText();
+        }
+
+        /// <summary>Waits for the economy singleton (created by BattleCore.Ensure) and subscribes.</summary>
+        IEnumerator BindEconomy()
+        {
+            for (int i = 0; i < 10 && BattleEconomyController.Instance == null; i++)
+                yield return null;
+            var economy = BattleEconomyController.Instance;
+            if (economy != null)
+            {
+                economy.GoldChanged -= OnGoldChanged;
+                economy.GoldChanged += OnGoldChanged;
+            }
+            RefreshGoldText();
+        }
+
+        void OnGoldChanged(TeamId team, int amount)
+        {
+            if (team != TeamId.Player) return;
+            RefreshGoldText();
+        }
+
+        void RefreshGoldText()
+        {
+            if (_goldText == null) return;
+            var economy = BattleEconomyController.Instance;
+            int gold = economy != null ? economy.PlayerGold : 0;
+            _goldText.text = "金币 " + gold;
+        }
+
         // ---- population --------------------------------------------------------
 
         void PopulateCommander(CommanderDefinition c)
@@ -474,7 +546,8 @@ namespace Mvp.Battle.UI
 
                 var entry = c.StartingUnits[i];
                 if (_cardNames[i] != null) { _cardNames[i].text = UnitDisplayName(entry.UnitType); _cardNames[i].color = Color.white; }
-                if (_cardCounts[i] != null) _cardCounts[i].text = "×" + entry.Count;
+                if (_cardCounts[i] != null)
+                    _cardCounts[i].text = entry.Count + "格×" + entry.MembersPerSlot;
                 if (_cardBadges[i] != null) _cardBadges[i].color = Color.white;
             }
         }
@@ -509,25 +582,6 @@ namespace Mvp.Battle.UI
             }
         }
 
-        void OnBeginCombatFormationEdit()
-        {
-            var registry = CommanderGroupRegistry.Instance;
-            var group = registry != null ? registry.ActiveGroup : null;
-            var formation = FormationController.Instance;
-            string reason = null;
-            if (formation == null || !formation.BeginCombatEdit(group, out reason))
-            {
-                var failedStatus = BattleUiStatusText.Instance;
-                if (failedStatus != null) failedStatus.SetStatus(reason ?? "当前无法调整阵型");
-                return;
-            }
-            var selection = Mvp.Battle.Units.UnitSelectionController.Instance;
-            if (selection != null) selection.ClearSelection();
-            RefreshCombatFormationControls();
-            var status = BattleUiStatusText.Instance;
-            if (status != null) status.SetStatus("阵型编辑：选择单位后点击 3×3 格，完成后确认重整");
-        }
-
         void OnConfirmCombatFormationEdit()
         {
             var formation = FormationController.Instance;
@@ -543,7 +597,7 @@ namespace Mvp.Battle.UI
             RefreshFormationHighlight();
             RefreshCombatFormationControls();
             var status = BattleUiStatusText.Instance;
-            if (status != null) status.SetStatus("编队开始按新阵型重整");
+            if (status != null) status.SetStatus("编队开始按新阵型重整，完成后进入坚守");
         }
 
         void OnCancelCombatFormationEdit()
@@ -612,7 +666,21 @@ namespace Mvp.Battle.UI
         {
             bool deploying = BattlePhaseState.Current == BattlePhase.Deployment;
             if (_startBattleGo != null) _startBattleGo.SetActive(deploying);
+            if (_skillBar != null)
+                _skillBar.gameObject.SetActive(!deploying);
             RefreshCombatFormationControls();
+        }
+
+        /// <summary>
+        /// Builds the bottom skill bar (技能栏). It starts hidden and is populated with
+        /// the active commander group once BindCommanderGroups fires ActiveGroupChanged.
+        /// </summary>
+        void CreateSkillBar()
+        {
+            var registry = CommanderGroupRegistry.Instance;
+            var group = registry != null ? registry.ActiveGroup : null;
+            _skillBar = BattleSkillBar.Create(transform, group);
+            _skillBar.gameObject.SetActive(false);
         }
 
         void RefreshFormationHighlight()
@@ -687,7 +755,13 @@ namespace Mvp.Battle.UI
             switch (type)
             {
                 case UnitType.Infantry: return "步兵";
+                case UnitType.MachineGunner: return "机枪兵";
+                case UnitType.Scout: return "侦察兵";
+                case UnitType.ScoutCar: return "侦察车";
                 case UnitType.Tank: return "坦克";
+                case UnitType.HeavyTank: return "大坦克";
+                case UnitType.SelfPropelledArtillery: return "自行火炮";
+                case UnitType.RocketArtillery: return "火箭炮车";
                 default: return type.ToString();
             }
         }

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Map;
 using Mvp.Battle.Map.Generation;
+using Mvp.Battle.Buildings;
 using Mvp.Shared;
 using Mvp.Battle.Commanders;
 using Mvp.CommanderSelect;
@@ -37,6 +38,11 @@ namespace Mvp.Battle.Units
                 return;
             }
 
+            // 阶段B: buildings must be on the grid before any unit spawn validation
+            // (footprint cells are blocked/occupied; unit spawn cells must not overlap).
+            var buildings = BuildingRegistry.Instance;
+            if (buildings != null) buildings.EnsureDefaultBuildingsPlaced();
+
             var roster = ResolveRoster();
             TraitEffectService.BuildRuntime(roster.Commanders);
             var deployment = ResolveDeployment(grid, roster.Commanders.Count, 2);
@@ -52,6 +58,14 @@ namespace Mvp.Battle.Units
                 var entry = roster.Commanders[r];
                 var commander = CommanderCatalog.GetById(entry.CommanderId);
                 if (commander == null) continue;
+                if (!commander.HasValidSingleTypeStartingArmy() ||
+                    entry.StartingUnits.Count != 1 ||
+                    entry.StartingUnits[0].UnitType != commander.StartingUnits[0].UnitType)
+                {
+                    Debug.LogError("[UnitSpawner] Invalid single-type starting army for " +
+                        entry.CommanderId);
+                    continue;
+                }
                 var zone = deployment.PlayerZones[r];
                 var group = new CommanderGroupRuntime
                 {
@@ -86,7 +100,7 @@ namespace Mvp.Battle.Units
                         }
                         var cell = ToVector(zone.Cells[slot]);
                         var view = SpawnUnit(def, TeamId.Player, cell, group.GroupId,
-                            spawnOrder, slot);
+                            spawnOrder, slot, unitEntry.MembersPerSlot);
                         if (view != null) group.Members.Add(view);
                         else groupFailed = true;
                         spawnOrder++;
@@ -102,6 +116,7 @@ namespace Mvp.Battle.Units
                     continue;
                 }
 
+                InitializeFacingTowardMapCenter(group, grid);
                 CaptureInitialLayout(group, false);
                 if (group.Members.Count > 0)
                     CommanderGroupRegistry.Instance.Register(group, true);
@@ -119,6 +134,8 @@ namespace Mvp.Battle.Units
                 "铁卫军团", deployment.EnemyZones[1], 3, 1);
             if (BattleOutcomeController.Instance != null)
                 BattleOutcomeController.Instance.NotifyInitialSpawnCompleted();
+            if (ExtractionObjectiveController.Instance != null)
+                ExtractionObjectiveController.Instance.InitializeAfterSpawn();
         }
 
         void SpawnEnemyGroup(string groupId, string commanderId, string displayName,
@@ -154,6 +171,7 @@ namespace Mvp.Battle.Units
                 return;
             }
 
+            InitializeFacingTowardMapCenter(group, BattleGridController.Instance);
             CaptureInitialLayout(group, true);
             CommanderGroupRegistry.Instance.Register(group, false);
         }
@@ -235,6 +253,24 @@ namespace Mvp.Battle.Units
             group.Layout.Capture(group, group.AnchorCell, group.Members, slots, locked);
         }
 
+        static void InitializeFacingTowardMapCenter(CommanderGroupRuntime group,
+            BattleGridController grid)
+        {
+            if (group == null || grid == null) return;
+            var center = new Vector2Int((grid.Width - 1) / 2, (grid.Height - 1) / 2);
+            var facing = FormationFacing.Quantize(center - group.AnchorCell);
+            if (facing == Vector2Int.zero) facing = FormationFacing.Default;
+            group.Facing = facing;
+
+            Vector3 worldDirection = FormationFacing.WorldDirection(facing);
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member == null || member.Data == null ||
+                    member.Data.State == UnitState.Dead) continue;
+                member.SetFacingDirection(worldDirection);
+            }
+        }
         static void RollbackGroup(CommanderGroupRuntime group, BattleGridController grid)
         {
             for (int i = 0; i < group.Members.Count; i++)
@@ -261,7 +297,8 @@ namespace Mvp.Battle.Units
         }
 
         UnitView SpawnUnit(UnitDefinition def, TeamId team, Vector2Int cell,
-            string commanderGroupId, int spawnOrder, int formationSlotIndex)
+            string commanderGroupId, int spawnOrder, int formationSlotIndex,
+            int membersPerSlot = 1)
         {
             var grid = BattleGridController.Instance;
             if (def == null || grid == null) return null;
@@ -281,6 +318,7 @@ namespace Mvp.Battle.Units
                 CommanderGroupId = commanderGroupId,
                 FormationSlotIndex = formationSlotIndex,
                 SpawnOrder = spawnOrder,
+                MembersPerSlot = Mathf.Clamp(membersPerSlot, 1, 3),
                 RuntimeMaxHealth = runtimeMaxHealth,
                 CurrentHealth = runtimeMaxHealth,
                 State = UnitState.Idle,

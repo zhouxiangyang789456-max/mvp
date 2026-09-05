@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Commanders;
+using Mvp.Battle.Skills;
 using Mvp.Battle.Units;
 using Mvp.Battle.Vision;
 using Mvp.Shared;
@@ -28,7 +29,9 @@ namespace Mvp.Battle.AI
         MemoryExpired,
         TargetDefeated,
         CommandRejected,
-        Recovering
+        Recovering,
+        Taunted,
+        DecoyLured
     }
 
     /// <summary>
@@ -38,6 +41,8 @@ namespace Mvp.Battle.AI
     public sealed class EnemyGroupAiController : MonoBehaviour
     {
         [SerializeField] EnemyAiConfig _config = new EnemyAiConfig();
+
+        public static EnemyGroupAiController Instance { get; private set; }
 
         readonly List<CommanderGroupRuntime> _visibleTargets =
             new List<CommanderGroupRuntime>(8);
@@ -53,6 +58,12 @@ namespace Mvp.Battle.AI
 
         void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            Instance = this;
             _config.Sanitize();
         }
 
@@ -68,6 +79,7 @@ namespace Mvp.Battle.AI
 
         void OnDestroy()
         {
+            if (Instance == this) Instance = null;
             _contexts.Clear();
         }
 
@@ -81,6 +93,26 @@ namespace Mvp.Battle.AI
             }
             snapshot = default(EnemyGroupAiSnapshot);
             return false;
+        }
+
+        /// <summary>
+        /// Clears every enemy group's memory of <paramref name="target"/> (called when a
+        /// group becomes concealed). Prevents the AI from investigating / attacking the
+        /// last-known anchor of a group it can no longer see (技能文档 §6.4, 验收风险 #2).
+        /// </summary>
+        public void ForgetGroup(CommanderGroupRuntime target)
+        {
+            if (target == null) return;
+            foreach (var pair in _contexts)
+            {
+                var context = pair.Value;
+                if (context.CurrentTargetGroupId != target.GroupId) continue;
+                context.CurrentTargetGroupId = null;
+                context.State = EnemyAiState.AcquireTarget;
+                context.LastReason = EnemyAiDecisionReason.TargetLost;
+                context.LastKnownTargetAnchor = default(Vector2Int);
+                context.MemoryExpireDecisionTick = 0;
+            }
         }
 
         void OnSlowTick()
@@ -104,6 +136,18 @@ namespace Mvp.Battle.AI
             }
 
             DecisionCount++;
+            TacticalDecoyRuntime forcedDecoy;
+            if (TacticalDecoyService.TryGetForcedTarget(group, out forcedDecoy))
+            {
+                HandleDecoyTarget(group, forcedDecoy, context, commands);
+                return;
+            }
+            CommanderGroupRuntime forcedTarget;
+            if (TauntEffectService.TryGetForcedTarget(group, Time.time, out forcedTarget))
+            {
+                HandleTauntedTarget(group, forcedTarget, context, commands);
+                return;
+            }
             vision.GetVisibleEnemyGroups(group, _visibleTargets);
             CommanderGroupRuntime visibleCurrent = FindById(_visibleTargets,
                 context.CurrentTargetGroupId);
@@ -138,6 +182,76 @@ namespace Mvp.Battle.AI
             }
             RefreshMemory(context, target, vision.GetSnapshotVersion(group));
             IssueAttack(group, target, context, commands, EnemyAiDecisionReason.TargetAcquired);
+        }
+
+        public void NotifyTaunted(CommanderGroupRuntime affected, CommanderGroupRuntime source)
+        {
+            if (affected == null || source == null || affected.IsDefeated || source.IsDefeated)
+                return;
+            var commands = CommanderGroupCommandController.Instance;
+            if (commands == null) return;
+            var context = GetOrCreateContext(affected);
+            context.RecoverUntilDecisionTick = 0;
+            HandleTauntedTarget(affected, source, context, commands);
+        }
+
+        public void NotifyDecoyLured(CommanderGroupRuntime affected, TacticalDecoyRuntime decoy)
+        {
+            if (affected == null || affected.IsDefeated || decoy == null || !decoy.IsAlive)
+                return;
+            var commands = CommanderGroupCommandController.Instance;
+            if (commands == null) return;
+            var context = GetOrCreateContext(affected);
+            context.RecoverUntilDecisionTick = 0;
+            HandleDecoyTarget(affected, decoy, context, commands);
+        }
+
+        void HandleDecoyTarget(CommanderGroupRuntime group, TacticalDecoyRuntime decoy,
+            EnemyGroupAiRuntime context, CommanderGroupCommandController commands)
+        {
+            bool alreadyAttacking = group.State == CommanderGroupState.Attacking &&
+                group.CurrentCommand.Type == GroupCommandType.AttackTacticalTarget &&
+                group.CurrentCommand.TargetTacticalId == decoy.DecoyId;
+            context.CurrentTargetGroupId = null;
+            context.LastKnownTargetAnchor = decoy.Cell;
+            context.LastSeenDecisionTick = _decisionTick;
+            context.LastReason = EnemyAiDecisionReason.DecoyLured;
+            if (alreadyAttacking)
+            {
+                context.State = EnemyAiState.WaitCommand;
+                return;
+            }
+            commands.CancelGroupCommand(group);
+            if (commands.CommandAttackTacticalTarget(group, decoy.AttackProxy, decoy.DecoyId))
+            {
+                context.State = EnemyAiState.WaitCommand;
+                context.ConsecutiveFailureCount = 0;
+                context.CommandSequence = group.CurrentCommand.Sequence;
+                return;
+            }
+            CommandFailureCount++;
+            context.ConsecutiveFailureCount++;
+            context.State = EnemyAiState.Recover;
+            context.RecoverUntilDecisionTick = _decisionTick + _config.RecoverDurationTicks;
+            context.LastReason = EnemyAiDecisionReason.CommandRejected;
+        }
+
+        void HandleTauntedTarget(CommanderGroupRuntime group, CommanderGroupRuntime target,
+            EnemyGroupAiRuntime context, CommanderGroupCommandController commands)
+        {
+            bool alreadyAttacking = group.State == CommanderGroupState.Attacking &&
+                group.CurrentCommand.TargetGroupId == target.GroupId;
+            context.CurrentTargetGroupId = target.GroupId;
+            context.LastKnownTargetAnchor = target.AnchorCell;
+            context.LastSeenDecisionTick = _decisionTick;
+            context.LastReason = EnemyAiDecisionReason.Taunted;
+            if (alreadyAttacking)
+            {
+                context.State = EnemyAiState.WaitCommand;
+                return;
+            }
+            commands.CancelGroupCommand(group);
+            IssueAttack(group, target, context, commands, EnemyAiDecisionReason.Taunted);
         }
 
         void HandleVisibleTarget(CommanderGroupRuntime group, CommanderGroupRuntime target,
@@ -302,6 +416,9 @@ namespace Mvp.Battle.AI
                 var candidate = candidates[i];
                 if (candidate == null || candidate.IsDefeated || candidate.Team == observer.Team)
                     continue;
+                // Defense in depth: vision already filters concealed groups, but the AI
+                // must never pick one as a target regardless of which list it came from.
+                if (ConcealmentService.IsConcealed(candidate)) continue;
                 int distance = Manhattan(observer.AnchorCell, candidate.AnchorCell);
                 if (distance > bestDistance) continue;
                 if (distance == bestDistance && best != null &&
@@ -361,7 +478,7 @@ namespace Mvp.Battle.AI
                         victim.Data.State == UnitState.Dead) continue;
                     int dx = Mathf.Abs(attacker.Data.GridPosition.x - victim.Data.GridPosition.x);
                     int dz = Mathf.Abs(attacker.Data.GridPosition.y - victim.Data.GridPosition.y);
-                    if (Mathf.Max(dx, dz) <= attacker.Data.Definition.AttackRange)
+                    if (Mathf.Max(dx, dz) <= attacker.Data.Definition.AttackRangeMax)
                         return true;
                 }
             }

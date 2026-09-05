@@ -81,6 +81,16 @@ namespace Mvp.Battle.Outcome
 #endif
         }
 
+        public bool ResolveObjective(BattleOutcome outcome)
+        {
+            if (outcome != BattleOutcome.Victory && outcome != BattleOutcome.Defeat)
+                return false;
+            if (State != BattleOutcomeState.Running && State != BattleOutcomeState.Candidate)
+                return false;
+            ResolveOnce(outcome);
+            return Result != null && Result.Outcome == outcome;
+        }
+
         void OnGroupDefeated(CommanderGroupRuntime group)
         {
             if (State == BattleOutcomeState.Running || State == BattleOutcomeState.Candidate)
@@ -120,8 +130,15 @@ namespace Mvp.Battle.Outcome
             for (int i = 0; i < _registry.Groups.Count; i++)
             {
                 var group = _registry.Groups[i];
-                if (group == null || group.IsDefeated) continue;
+                if (group == null || group.IsDefeated || group.IsExtracted) continue;
                 if (group.Team == TeamId.Player) players++; else if (group.Team == TeamId.Enemy) enemies++;
+            }
+            var extraction = ExtractionObjectiveController.Instance;
+            if (extraction != null && extraction.IsEnabled)
+            {
+                if (players == 0 && extraction.ExtractedCount == 0)
+                    return BattleOutcome.Defeat;
+                return BattleOutcome.None;
             }
             if (players == 0 && enemies == 0) return BattleOutcome.Draw;
             if (enemies == 0 && players > 0) return BattleOutcome.Victory;
@@ -154,6 +171,20 @@ namespace Mvp.Battle.Outcome
                 RewardGrantId = battleId + "_reward",
                 ShopRandomSeed = battleId.GetHashCode()
             };
+            var extraction = ExtractionObjectiveController.Instance;
+            if (extraction != null && extraction.IsEnabled)
+            {
+                Result.ObjectiveType = BattleObjectiveType.TimedExtraction;
+                Result.TimeLimitSeconds = extraction.TimeLimitSeconds;
+                Result.RemainingSeconds = extraction.RemainingSeconds;
+                Result.RequiredExtractionCount = extraction.RequiredCount;
+                Result.ExtractedUnitCount = extraction.ExtractedCount;
+                Result.ExtractionCompleted = extraction.IsComplete;
+            }
+            else
+            {
+                Result.ObjectiveType = BattleObjectiveType.Elimination;
+            }
             State = BattleOutcomeState.Resolved;
             BattleSimulationState.Freeze();
             if (BattleResolved != null) BattleResolved(Result);

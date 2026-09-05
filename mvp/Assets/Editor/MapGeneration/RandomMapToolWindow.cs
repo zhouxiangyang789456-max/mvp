@@ -11,6 +11,7 @@ using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
 using Mvp.Battle.Map;
 using Mvp.Battle.Map.Generation;
+using Mvp.Shared;
 
 namespace Mvp.Editor.MapGeneration
 {
@@ -40,6 +41,7 @@ namespace Mvp.Editor.MapGeneration
         int _retryCount = 10;
         int _playerDeploymentGroups = 1;
         int _enemyDeploymentGroups = 2;
+        [NonSerialized] Vector2 _parameterScroll;
 
         // ---- preview -------------------------------------------------------------
         [NonSerialized] TerrainType[,] _lastBattle;
@@ -96,8 +98,15 @@ namespace Mvp.Editor.MapGeneration
             DrawProfileHeader();
 
             GUILayout.BeginHorizontal();
-            GUILayout.BeginVertical("box", GUILayout.Width(290));
+            float leftPanelHeight = Mathf.Max(260f, position.height - 150f);
+            GUILayout.BeginVertical("box", GUILayout.Width(290), GUILayout.Height(leftPanelHeight));
+            _parameterScroll = EditorGUILayout.BeginScrollView(
+                _parameterScroll,
+                false,
+                true,
+                GUILayout.ExpandHeight(true));
             DrawParameterPanel();
+            EditorGUILayout.EndScrollView();
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical("box");
@@ -123,7 +132,7 @@ namespace Mvp.Editor.MapGeneration
             if (GUILayout.Button("随机种子", GUILayout.Width(92))) RandomSeed();
             if (GUILayout.Button("验证当前地图", GUILayout.Width(110))) RunValidation();
             if (GUILayout.Button("导出预览 PNG", GUILayout.Width(110))) ExportPng();
-            if (GUILayout.Button("应用到 BattleScene", GUILayout.Width(140))) ApplyToBattleScene();
+            if (GUILayout.Button("应用到 BattleScene 并运行", GUILayout.Width(180))) ApplyToBattleSceneAndPlay();
             GUILayout.FlexibleSpace();
             EditorGUILayout.LabelField("batch: " + (_batchJob != null ? (_batchJob.Done + "/" + _batchJob.Total) : "空闲"));
             GUILayout.EndHorizontal();
@@ -217,13 +226,19 @@ namespace Mvp.Editor.MapGeneration
             _settings.ForestMoisture = EditorGUILayout.Slider("森林湿度线", _settings.ForestMoisture, 0f, 1f);
             _settings.Rivers = EditorGUILayout.IntField("河流数", _settings.Rivers);
             _settings.BridgeSpan = EditorGUILayout.IntField("桥跨格数", _settings.BridgeSpan);
+            EditorGUILayout.HelpBox(
+                "道路按邻接自动使用直路、弯道、T 字和十字贴图；跨河道路自动显示桥梁。",
+                MessageType.None);
             _settings.SmoothRounds = EditorGUILayout.IntField("平滑轮数", _settings.SmoothRounds);
             _settings.Mirror = EditorGUILayout.Toggle("180° 对称", _settings.Mirror);
             _settings.Buildings = EditorGUILayout.Toggle("生成建筑", _settings.Buildings);
             if (_settings.Buildings)
             {
-                _settings.Factories = EditorGUILayout.IntField("工厂数", _settings.Factories);
-                _settings.Cities = EditorGUILayout.IntField("城市数", _settings.Cities);
+                _settings.Roads = EditorGUILayout.Toggle("生成道路与桥梁", _settings.Roads);
+                _settings.HouseCount = Mathf.Max(0,
+                    EditorGUILayout.IntField("楼房数量", _settings.HouseCount));
+                _settings.ArmoryCount = Mathf.Max(0,
+                    EditorGUILayout.IntField("兵工厂数量", _settings.ArmoryCount));
             }
 
             GUILayout.Space(4);
@@ -250,6 +265,34 @@ namespace Mvp.Editor.MapGeneration
             {
                 EditorGUILayout.HelpBox("正在编辑规则: " + _profile.Rules[_selectedRuleIndex].DisplayName, MessageType.Info);
                 if (GUILayout.Button("写入选中规则")) WriteWorkspaceToSelectedRule();
+            }
+
+            GUILayout.Space(6);
+            EditorGUILayout.LabelField("限时传送门撤离 (目标类型)", EditorStyles.miniBoldLabel);
+            _settings.EnableExtractionPortal = EditorGUILayout.Toggle(
+                new GUIContent("启用撤离传送门",
+                    "勾选后此关卡会成为“限时撤离”目标；预览图会标记传送门位置与距离玩家路径步数。"),
+                _settings.EnableExtractionPortal);
+            using (new EditorGUI.DisabledScope(!_settings.EnableExtractionPortal))
+            {
+                _settings.ExtractionTimeLimitSeconds = Mathf.Clamp(
+                    EditorGUILayout.IntField("撤离时限 (秒)", _settings.ExtractionTimeLimitSeconds), 5, 1800);
+                _settings.ExtractionZoneWidth = Mathf.Clamp(
+                    EditorGUILayout.IntField("撤离区宽 (格)", _settings.ExtractionZoneWidth), 1, 4);
+                _settings.ExtractionZoneHeight = Mathf.Clamp(
+                    EditorGUILayout.IntField("撤离区高 (格)", _settings.ExtractionZoneHeight), 1, 4);
+                _settings.MinPortalPathDistanceFromPlayer = Mathf.Clamp(
+                    EditorGUILayout.IntField("距玩家最近路径 (min)", _settings.MinPortalPathDistanceFromPlayer), 0, 64);
+                _settings.MaxPortalPathDistanceFromPlayer = Mathf.Clamp(
+                    EditorGUILayout.IntField("距玩家最近路径 (max)", _settings.MaxPortalPathDistanceFromPlayer), 1, 96);
+                if (_settings.MaxPortalPathDistanceFromPlayer < _settings.MinPortalPathDistanceFromPlayer)
+                    _settings.MaxPortalPathDistanceFromPlayer = _settings.MinPortalPathDistanceFromPlayer;
+                _settings.PortalOpeningDelaySeconds = Mathf.Clamp(
+                    EditorGUILayout.FloatField("开门延迟 (秒)", _settings.PortalOpeningDelaySeconds), 0f, 10f);
+                EditorGUILayout.HelpBox(
+                    "传送门会被放到“远处角落”：与最近玩家部署格的最短路径步数落在 [min, max] 区间，再按距离带中点 + 地图中心距离择优。\n" +
+                    "想靠近角落就调高 min；想避开中线就减小 max。",
+                    MessageType.None);
             }
         }
 
@@ -318,6 +361,8 @@ namespace Mvp.Editor.MapGeneration
                 EditorGUI.DrawRect(hr, new Color(1f, 1f, 0f, 0.35f));
             }
             DrawDeploymentOverlay(rect, cell);
+            DrawBuildingOverlay(rect, cell);
+            DrawPortalOverlay(rect, cell);
 
             GUILayout.EndScrollView();
 
@@ -329,6 +374,8 @@ namespace Mvp.Editor.MapGeneration
                     + (TerrainCatalog.IsWalkable(t) ? " 可走" : " 阻挡"));
             }
 
+            DrawBuildingStats();
+
             if (_lastData != null)
             {
                 EditorGUILayout.LabelField("尺寸 " + _lastData.Width + "x" + _lastData.Height
@@ -339,6 +386,7 @@ namespace Mvp.Editor.MapGeneration
                 EditorGUILayout.LabelField(_lastValidation.Passed
                     ? "校验通过"
                     : "校验失败: " + _lastValidation.ToString());
+            DrawPortalStats();
         }
 
         void DrawDeploymentOverlay(Rect rect, float cell)
@@ -348,6 +396,197 @@ namespace Mvp.Editor.MapGeneration
                 EditorGUI.DrawRect(new Rect(rect.x + c.X * cell, rect.y + c.Y * cell, cell, cell), new Color(0.2f, 0.6f, 1f, 0.4f));
             foreach (var c in _lastData.EnemyDeploymentCells)
                 EditorGUI.DrawRect(new Rect(rect.x + c.X * cell, rect.y + c.Y * cell, cell, cell), new Color(1f, 0.3f, 0.3f, 0.4f));
+        }
+
+        static readonly Color HouseMarkerColor = new Color(0.949f, 0.788f, 0.298f, 0.95f); // #F2C94C
+        static readonly Color ArmoryMarkerColor = new Color(0.851f, 0.294f, 0.271f, 0.95f); // #D94B45
+
+        /// <summary>Draws a distinct inset marker for each placed building on the preview.</summary>
+        void DrawBuildingOverlay(Rect rect, float cell)
+        {
+            if (_lastData == null || _lastData.BuildingSpawnData == null) return;
+            float inset = Mathf.Max(1f, cell * 0.22f);
+            for (int i = 0; i < _lastData.BuildingSpawnData.Count; i++)
+            {
+                var a = _lastData.BuildingSpawnData[i].AnchorCell;
+                Color c = _lastData.BuildingSpawnData[i].DefinitionId == "building_armory"
+                    ? ArmoryMarkerColor
+                    : HouseMarkerColor;
+                EditorGUI.DrawRect(new Rect(rect.x + a.x * cell + inset, rect.y + a.y * cell + inset,
+                    cell - inset * 2f, cell - inset * 2f), c);
+            }
+        }
+
+        /// <summary>计划/实际数量、非平原/越界/重叠校验与实际不足警告。</summary>
+        void DrawBuildingStats()
+        {
+            if (_lastData == null || _lastData.Buildings == null || _lastData.BuildingReport == null) return;
+
+            var report = _lastData.BuildingReport;
+            EditorGUILayout.LabelField("建筑统计 (楼房 / 兵工厂):", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField("  计划 " + report.RequestedHouse + " / " + report.RequestedArmory
+                + "   实际 " + report.PlacedHouse + " / " + report.PlacedArmory, EditorStyles.miniLabel);
+
+            bool valid = report.IsValid;
+            EditorGUILayout.LabelField(valid
+                ? "  非平原格=0  越界=0  重叠=0"
+                : "  非平原格=" + report.NonPlainCells
+                    + "  越界=" + report.OutOfBoundsCells
+                    + "  重叠=" + report.OverlapCells, EditorStyles.miniLabel);
+
+            if (!valid)
+                EditorGUILayout.HelpBox("建筑放置违规：建筑所在格必须为平原（非平原/越界/重叠须为 0）", MessageType.Error);
+            else if (report.PlacedHouse < report.RequestedHouse || report.PlacedArmory < report.RequestedArmory)
+                EditorGUILayout.HelpBox("平原不足：实际建筑数量少于计划数量", MessageType.Warning);
+        }
+
+        // ---- extraction portal overlay + stats ---------------------------------------
+
+        static readonly Color PortalFillColor   = new Color(0.62f, 0.30f, 0.92f, 0.45f); // #9F4DEB 半透明
+        static readonly Color PortalBorderColor = new Color(0.85f, 0.55f, 1.00f, 0.95f);
+        static readonly Color PortalDistanceColor = new Color(1f, 1f, 1f, 0.85f);
+        static GUIStyle _portalLabelStyle;
+        static GUIStyle PortalLabelStyle
+        {
+            get
+            {
+                if (_portalLabelStyle == null)
+                {
+                    _portalLabelStyle = new GUIStyle(EditorStyles.boldLabel);
+                    _portalLabelStyle.alignment = TextAnchor.MiddleCenter;
+                    _portalLabelStyle.fontSize = 12;
+                    _portalLabelStyle.normal.textColor = new Color(1f, 1f, 1f, 0.95f);
+                }
+                return _portalLabelStyle;
+            }
+        }
+
+        /// <summary>Draws the extraction portal footprint with a coloured fill, border
+        /// and a center "P" marker so designers can spot it on the grid preview.</summary>
+        void DrawPortalOverlay(Rect rect, float cell)
+        {
+            if (_lastData == null || _lastData.Portal == null) return;
+            var p = _lastData.Portal;
+            var footprint = new Rect(rect.x + p.AnchorCell.x * cell,
+                rect.y + p.AnchorCell.y * cell, p.Width * cell, p.Height * cell);
+            EditorGUI.DrawRect(footprint, PortalFillColor);
+            DrawRectBorder(footprint, PortalBorderColor, 2f);
+            GUI.Label(footprint, "P", PortalLabelStyle);
+        }
+
+        static void DrawRectBorder(Rect r, Color c, float thickness)
+        {
+            EditorGUI.DrawRect(new Rect(r.x, r.y, r.width, thickness), c);
+            EditorGUI.DrawRect(new Rect(r.x, r.yMax - thickness, r.width, thickness), c);
+            EditorGUI.DrawRect(new Rect(r.x, r.y, thickness, r.height), c);
+            EditorGUI.DrawRect(new Rect(r.xMax - thickness, r.y, thickness, r.height), c);
+        }
+
+        /// <summary>Shows portal anchor/size + shortest path distance to the nearest
+        /// player deployment cell so designers can verify it lands in the "far corner".</summary>
+        void DrawPortalStats()
+        {
+            if (_lastData == null) return;
+            EditorGUILayout.LabelField("目标类型", EditorStyles.miniBoldLabel);
+            if (_lastData.Portal == null)
+            {
+                EditorGUILayout.LabelField(_settings.EnableExtractionPortal
+                    ? "  撤离 (本次生成失败——已自动重试仍无可用位置，可放宽 min/max 或开关后再生)"
+                    : "  消灭 (未启用撤离传送门)", EditorStyles.miniLabel);
+                return;
+            }
+
+            var p = _lastData.Portal;
+            int dist = ShortestPathFromPortalToPlayer(p);
+            int minD = Mathf.Max(0, _settings.MinPortalPathDistanceFromPlayer);
+            int maxD = Mathf.Max(minD, _settings.MaxPortalPathDistanceFromPlayer);
+            bool inBand = dist >= minD && dist <= maxD;
+
+            EditorGUILayout.LabelField("  模式: 限时撤离  目标=" + p.TimeLimitSeconds + "s", EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("  锚点: (" + p.AnchorCell.x + ", " + p.AnchorCell.y
+                + ")  尺寸: " + p.Width + "x" + p.Height + "  开门延迟: "
+                + p.OpeningDelaySeconds.ToString("0.0") + "s", EditorStyles.miniLabel);
+
+            string bandMsg = inBand
+                ? "  距最近玩家格 = " + dist + " 步  (落在 [" + minD + ", " + maxD + "] 区间 ✓)"
+                : "  距最近玩家格 = " + dist + " 步  (超出 [" + minD + ", " + maxD + "] 区间 ✗)";
+            EditorGUILayout.LabelField(bandMsg, EditorStyles.miniLabel);
+            if (!inBand)
+                EditorGUILayout.HelpBox(
+                    "传送门距离玩家不在期望区间。在角落地图上想拉远就调高 min，玩家活跃区域太靠地图中心就调低 max。",
+                    MessageType.Warning);
+        }
+
+        /// <summary>8-direction BFS from any portal footprint cell to the nearest player
+        /// deployment cell, restricted to walkable terrain. Returns -1 if unreachable.</summary>
+        int ShortestPathFromPortalToPlayer(PortalSpawnData portal)
+        {
+            if (_lastBattle == null || portal == null) return -1;
+            int h = _lastBattle.GetLength(0);
+            int w = _lastBattle.GetLength(1);
+
+            var start = new System.Collections.Generic.List<Vector2Int>();
+            for (int dy = 0; dy < portal.Height; dy++)
+            for (int dx = 0; dx < portal.Width; dx++)
+            {
+                int x = portal.AnchorCell.x + dx;
+                int y = portal.AnchorCell.y + dy;
+                if (x >= 0 && x < w && y >= 0 && y < h
+                    && TerrainCatalog.IsWalkable(_lastBattle[y, x]))
+                    start.Add(new Vector2Int(x, y));
+            }
+            if (start.Count == 0) return -1;
+
+            var goal = new bool[h, w];
+            for (int i = 0; i < _lastData.PlayerDeploymentCells.Count; i++)
+            {
+                var c = _lastData.PlayerDeploymentCells[i];
+                if (c.Y >= 0 && c.Y < h && c.X >= 0 && c.X < w) goal[c.Y, c.X] = true;
+            }
+            if (!AnyTrue(goal)) return -1;
+
+            var dist = new int[h, w];
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) dist[y, x] = -1;
+            var queue = new System.Collections.Generic.Queue<Vector2Int>();
+            for (int i = 0; i < start.Count; i++)
+            {
+                dist[start[i].y, start[i].x] = 0;
+                queue.Enqueue(start[i]);
+            }
+
+            var dirs = new[]
+            {
+                new Vector2Int(1, 0), new Vector2Int(-1, 0),
+                new Vector2Int(0, 1), new Vector2Int(0, -1),
+                new Vector2Int(1, 1), new Vector2Int(1, -1),
+                new Vector2Int(-1, 1), new Vector2Int(-1, -1),
+            };
+
+            while (queue.Count > 0)
+            {
+                var c = queue.Dequeue();
+                if (goal[c.y, c.x]) return dist[c.y, c.x];
+                for (int d = 0; d < dirs.Length; d++)
+                {
+                    int nx = c.x + dirs[d].x;
+                    int ny = c.y + dirs[d].y;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    if (dist[ny, nx] >= 0) continue;
+                    if (!TerrainCatalog.IsWalkable(_lastBattle[ny, nx])) continue;
+                    dist[ny, nx] = dist[c.y, c.x] + 1;
+                    queue.Enqueue(new Vector2Int(nx, ny));
+                }
+            }
+            return -1;
+        }
+
+        static bool AnyTrue(bool[,] g)
+        {
+            for (int y = 0; y < g.GetLength(0); y++)
+            for (int x = 0; x < g.GetLength(1); x++)
+                if (g[y, x]) return true;
+            return false;
         }
 
         void Regenerate()
@@ -368,6 +607,7 @@ namespace Mvp.Editor.MapGeneration
         void RandomSeed()
         {
             _settings.Seed = unchecked((uint)(Environment.TickCount & 0x7fffffff) | 1u);
+            Debug.Log("[RandomMapTool] 已随机生成 seed=" + _settings.Seed + "。点'应用到 BattleScene 并运行'生效。");
             Regenerate();
         }
 
@@ -630,28 +870,82 @@ namespace Mvp.Editor.MapGeneration
             Debug.Log("[RandomMapTool] 已导出 " + path);
         }
 
-        void ApplyToBattleScene()
+        void ApplyToBattleSceneAndPlay()
         {
+            // 1. 先退出当前 Play 模式,避免 Unity 编辑器在 Play 模式下 SaveScene 时
+            //    截断 OnDestroy/OnApplicationQuit 导致单例泄漏和 NRE。
+            if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                EditorApplication.isPlaying = false;
+                // 等待一帧让 OnDestroy 跑完再继续
+                EditorApplication.delayCall += () => { DoApplyAndPlay(); };
+                return;
+            }
+            DoApplyAndPlay();
+        }
+
+        void DoApplyAndPlay()
+        {
+            // 1. 先把当前参数写到 BattleGridController 的 _proceduralSettings（保持原逻辑）
             var grid = FindObjectOfType<BattleGridController>();
             if (grid == null)
             {
-                Debug.LogWarning("[RandomMapTool] 当前打开的场景没有 BattleGridController");
-                return;
+                // 当前场景没有 BattleGridController，先打开 BattleScene
+                const string battleScenePath = "Assets/Scenes/BattleScene.unity";
+                if (!System.IO.File.Exists(battleScenePath))
+                {
+                    Debug.LogWarning("[RandomMapTool] 找不到 Assets/Scenes/BattleScene.unity");
+                    return;
+                }
+                EditorSceneManager.OpenScene(battleScenePath, OpenSceneMode.Single);
+                grid = FindObjectOfType<BattleGridController>();
+                if (grid == null)
+                {
+                    Debug.LogWarning("[RandomMapTool] BattleScene 中没有 BattleGridController");
+                    return;
+                }
             }
+
             var mapSourceField = typeof(BattleGridController).GetField("_mapSource", BindingFlags.NonPublic | BindingFlags.Instance);
             var settingsField = typeof(BattleGridController).GetField("_proceduralSettings", BindingFlags.NonPublic | BindingFlags.Instance);
             var levelField = typeof(BattleGridController).GetField("_proceduralLevel", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (mapSourceField == null || settingsField == null || levelField == null)
+            var toolOverrideField = typeof(BattleGridController).GetField("_useAppliedToolSettings", BindingFlags.NonPublic | BindingFlags.Instance);
+            var profileField = typeof(BattleGridController).GetField("_proceduralProfile", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (mapSourceField == null || settingsField == null || levelField == null || toolOverrideField == null)
             {
                 Debug.LogWarning("[RandomMapTool] 找不到 BattleGridController 序列化字段");
                 return;
             }
+
             mapSourceField.SetValue(grid, BattleMapSource.Procedural);
             settingsField.SetValue(grid, _settings.Clone());
             levelField.SetValue(grid, Mathf.Max(1, _previewLevel));
+            toolOverrideField.SetValue(grid, true);
+
+            // 关键:把 _proceduralProfile 置空,避免 profile 字段覆盖 settings。
+            // 当 _proceduralProfile 为空且 BattleStartContext.MapProfile 也为空时,
+            // BattleGridController.ResolveMap 会走 fallback 到 _proceduralSettings。
+            if (profileField != null) profileField.SetValue(grid, null);
+
+            // Enter Play Mode Options may disable domain reload, so old static hand-off data
+            // can survive from the preceding battle. Clear it here as well as persisting the
+            // scene override above.
+            BattleMapContext.PendingRequest = null;
+            BattleStartContext.MapProfile = null;
+            BattleStartContext.LevelIndex = Mathf.Max(1, _previewLevel);
+
             EditorUtility.SetDirty(grid);
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
-            Debug.Log("[RandomMapTool] 已将当前参数应用到 BattleScene 的 BattleGridController (Procedural)。保存场景以持久化。");
+            EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
+            Debug.Log("[RandomMapTool] 已将当前参数应用到 BattleScene 并保存（工具配置优先）。 settings.EnableExtractionPortal=" + _settings.EnableExtractionPortal
+                + " seed=" + _settings.Seed + " Width=" + _settings.Width + " Height=" + _settings.Height);
+
+            // 2. 直接进入 Play 模式,让用户立刻看到地图跑起来
+            if (!EditorApplication.isPlaying)
+            {
+                EditorApplication.isPlaying = true;
+                Debug.Log("[RandomMapTool] 已进入 Play 模式。");
+            }
         }
 
         // ---- rule list (right panel) ----------------------------------------------------------
@@ -848,6 +1142,15 @@ namespace Mvp.Editor.MapGeneration
                                 result.Passed = false;
                                 result.Failures.Add(deployment.FailureReason);
                             }
+                        }
+
+                        // 建筑放置校验 (建筑平原约束): 建筑所在单格必须为平原, 且不越界、不重叠。
+                        if (result.Passed && generated.BuildingReport != null && !generated.BuildingReport.IsValid)
+                        {
+                            result.Passed = false;
+                            result.Failures.Add("建筑放置违规: 非平原=" + generated.BuildingReport.NonPlainCells
+                                + " 越界=" + generated.BuildingReport.OutOfBoundsCells
+                                + " 重叠=" + generated.BuildingReport.OverlapCells);
                         }
 
                         if (result.Passed) job.SuccessCount++;

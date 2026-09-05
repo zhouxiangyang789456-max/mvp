@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Commanders;
+using Mvp.Battle.Skills;
 using Mvp.Battle.Units;
 using Mvp.Shared;
 
@@ -19,6 +20,8 @@ namespace Mvp.Battle.Vision
             new Dictionary<string, HashSet<string>>();
         readonly Dictionary<string, int> _versionByObserver =
             new Dictionary<string, int>();
+        readonly Dictionary<string, Dictionary<string, float>> _forcedVisibleUntil =
+            new Dictionary<string, Dictionary<string, float>>();
         readonly HashSet<string> _nextVisible = new HashSet<string>();
         readonly List<UnitView> _queryBuffer = new List<UnitView>(32);
         readonly List<string> _changeBuffer = new List<string>(16);
@@ -53,9 +56,81 @@ namespace Mvp.Battle.Vision
         public bool IsVisible(CommanderGroupRuntime observer, CommanderGroupRuntime target)
         {
             if (observer == null || target == null) return false;
+            if (IsForcedVisible(observer, target, Time.time)) return true;
             HashSet<string> visible;
             return _visibleByObserver.TryGetValue(observer.GroupId, out visible) &&
                 visible.Contains(target.GroupId);
+        }
+
+        public void AddForcedVisibility(CommanderGroupRuntime observer,
+            CommanderGroupRuntime target, float until)
+        {
+            if (observer == null || target == null) return;
+            bool wasVisible = IsVisible(observer, target);
+            Dictionary<string, float> targets;
+            if (!_forcedVisibleUntil.TryGetValue(observer.GroupId, out targets))
+            {
+                targets = new Dictionary<string, float>();
+                _forcedVisibleUntil[observer.GroupId] = targets;
+            }
+            float existing;
+            if (!targets.TryGetValue(target.GroupId, out existing) || until > existing)
+                targets[target.GroupId] = until;
+            if (!wasVisible && !target.IsDefeated)
+            {
+                DiscoveryCount++;
+                GroupDiscovered?.Invoke(observer, target);
+            }
+            BumpVersion(observer.GroupId);
+        }
+
+        public void RemoveForcedVisibility(CommanderGroupRuntime observer,
+            CommanderGroupRuntime target)
+        {
+            if (observer == null || target == null) return;
+            Dictionary<string, float> targets;
+            if (!_forcedVisibleUntil.TryGetValue(observer.GroupId, out targets) ||
+                !targets.Remove(target.GroupId)) return;
+            if (targets.Count == 0) _forcedVisibleUntil.Remove(observer.GroupId);
+            BumpVersion(observer.GroupId);
+            RefreshNow(observer);
+        }
+
+        public bool IsForcedVisible(CommanderGroupRuntime observer,
+            CommanderGroupRuntime target, float now)
+        {
+            if (observer == null || target == null) return false;
+            Dictionary<string, float> targets;
+            float until;
+            return _forcedVisibleUntil.TryGetValue(observer.GroupId, out targets) &&
+                targets.TryGetValue(target.GroupId, out until) && until > now;
+        }
+
+        /// <summary>
+        /// Immediately grants <paramref name="observer"/> vision of
+        /// <paramref name="target"/> regardless of range / concealment (used by close-range
+        /// concealment discovery). Fires GroupDiscovered and bumps the observer's version.
+        /// </summary>
+        public void RevealNow(CommanderGroupRuntime observer, CommanderGroupRuntime target)
+        {
+            if (observer == null || target == null) return;
+            HashSet<string> current;
+            if (!_visibleByObserver.TryGetValue(observer.GroupId, out current))
+            {
+                current = new HashSet<string>();
+                _visibleByObserver[observer.GroupId] = current;
+            }
+            if (current.Add(target.GroupId))
+            {
+                if (!target.IsDefeated)
+                {
+                    DiscoveryCount++;
+                    GroupDiscovered?.Invoke(observer, target);
+                }
+            }
+            int version;
+            _versionByObserver.TryGetValue(observer.GroupId, out version);
+            _versionByObserver[observer.GroupId] = version == int.MaxValue ? 1 : version + 1;
         }
 
         public int GetSnapshotVersion(CommanderGroupRuntime observer)
@@ -72,13 +147,23 @@ namespace Mvp.Battle.Vision
             output.Clear();
             if (observer == null) return;
             HashSet<string> visible;
-            if (!_visibleByObserver.TryGetValue(observer.GroupId, out visible)) return;
             var registry = CommanderGroupRegistry.Instance;
             if (registry == null) return;
-            foreach (string groupId in visible)
+            if (_visibleByObserver.TryGetValue(observer.GroupId, out visible))
             {
-                var group = registry.Find(groupId);
-                if (group != null && !group.IsDefeated) output.Add(group);
+                foreach (string groupId in visible)
+                {
+                    var group = registry.Find(groupId);
+                    if (group != null && !group.IsDefeated) output.Add(group);
+                }
+            }
+            Dictionary<string, float> forced;
+            if (!_forcedVisibleUntil.TryGetValue(observer.GroupId, out forced)) return;
+            foreach (var pair in forced)
+            {
+                if (pair.Value <= Time.time) continue;
+                var group = registry.Find(pair.Key);
+                if (group != null && !group.IsDefeated && !output.Contains(group)) output.Add(group);
             }
         }
 
@@ -106,10 +191,13 @@ namespace Mvp.Battle.Vision
                 for (int q = 0; q < _queryBuffer.Count; q++)
                 {
                     var targetGroup = registry.Find(_queryBuffer[q]);
-                    if (targetGroup != null && !targetGroup.IsDefeated)
-                        _nextVisible.Add(targetGroup.GroupId);
+                    if (targetGroup == null || targetGroup.IsDefeated) continue;
+                    // 隐蔽编队不出现在敌方视野 (战斗技能系统开发文档 §6.4).
+                    if (ConcealmentService.IsConcealed(targetGroup)) continue;
+                    _nextVisible.Add(targetGroup.GroupId);
                 }
             }
+            AddForcedTargets(observer.GroupId, Time.time);
 
             HashSet<string> current;
             if (!_visibleByObserver.TryGetValue(observer.GroupId, out current))
@@ -154,6 +242,8 @@ namespace Mvp.Battle.Vision
             RemoveObserver(group);
             _versionByObserver.Remove(group.GroupId);
             foreach (var pair in _visibleByObserver) pair.Value.Remove(group.GroupId);
+            _forcedVisibleUntil.Remove(group.GroupId);
+            foreach (var pair in _forcedVisibleUntil) pair.Value.Remove(group.GroupId);
         }
 
         public void Clear()
@@ -163,6 +253,7 @@ namespace Mvp.Battle.Vision
             _nextVisible.Clear();
             _queryBuffer.Clear();
             _changeBuffer.Clear();
+            _forcedVisibleUntil.Clear();
             _groupCursor = 0;
         }
 
@@ -178,6 +269,28 @@ namespace Mvp.Battle.Vision
         void RemoveObserver(CommanderGroupRuntime observer)
         {
             _visibleByObserver.Remove(observer.GroupId);
+            _forcedVisibleUntil.Remove(observer.GroupId);
+        }
+
+        void AddForcedTargets(string observerGroupId, float now)
+        {
+            Dictionary<string, float> targets;
+            if (!_forcedVisibleUntil.TryGetValue(observerGroupId, out targets)) return;
+            _changeBuffer.Clear();
+            foreach (var pair in targets)
+            {
+                if (pair.Value > now) _nextVisible.Add(pair.Key);
+                else _changeBuffer.Add(pair.Key);
+            }
+            for (int i = 0; i < _changeBuffer.Count; i++) targets.Remove(_changeBuffer[i]);
+            if (targets.Count == 0) _forcedVisibleUntil.Remove(observerGroupId);
+        }
+
+        void BumpVersion(string observerGroupId)
+        {
+            int version;
+            _versionByObserver.TryGetValue(observerGroupId, out version);
+            _versionByObserver[observerGroupId] = version == int.MaxValue ? 1 : version + 1;
         }
     }
 }

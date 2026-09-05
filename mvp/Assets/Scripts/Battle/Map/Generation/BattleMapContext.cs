@@ -11,5 +11,6 @@ namespace Mvp.Battle.Map.Generation
         public static BattleMapRequest PendingRequest;
         public static GeneratedMapData LastGeneratedData;
         public static GeneratedMapIdentity LastIdentity;
+        public static HandAuthoredMapData LastHandMapData;
     }
 }

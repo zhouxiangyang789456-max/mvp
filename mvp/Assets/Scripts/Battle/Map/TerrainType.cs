@@ -13,6 +13,8 @@ namespace Mvp.Battle.Map
         SnowMountain,
         Desert,
         ShallowWater,
-        Ocean
+        Ocean,
+        Road,
+        Bridge
     }
 }

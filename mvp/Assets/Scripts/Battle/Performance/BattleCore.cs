@@ -1,7 +1,10 @@
 using UnityEngine;
 using Mvp.Battle.Commanders;
+using Mvp.Battle.Buildings;
+using Mvp.Battle.Economy;
 using Mvp.Battle.Vision;
 using Mvp.Battle.AI;
+using Mvp.Battle.Skills;
 using Mvp.Battle.Outcome;
 
 namespace Mvp.Battle
@@ -33,7 +36,19 @@ namespace Mvp.Battle
             go.AddComponent<CommanderGroupCommandController>();
             go.AddComponent<EnemyGroupAiController>();
             go.AddComponent<BattleOutcomeController>();
+            go.AddComponent<ExtractionObjectiveController>();
             go.AddComponent<BattleGmController>();
+            // 阶段B: buildings must be registered before any unit spawns place units.
+            go.AddComponent<BuildingRegistry>();
+            go.AddComponent<BuildingCaptureController>();
+            go.AddComponent<BattleEconomyController>();
+            // 战斗技能系统: range preview / targeting / skill command entry + hidden hosts.
+            go.AddComponent<SkillRangePreview>();
+            go.AddComponent<SkillTargetingController>();
+            go.AddComponent<GroupSkillController>();
+            ConcealmentService.EnsureHost();
+            SprintEffectService.EnsureHost();
+            TauntEffectService.EnsureHost();
             effects.RegisterDefaultEffects();
             ui.RegisterDefaultUi();
             _root = go;
@@ -41,6 +56,8 @@ namespace Mvp.Battle
 
         public static void Teardown()
         {
+            TacticalDecoyService.Shutdown();
+            TauntEffectService.Shutdown();
             if (_root != null)
             {
                 Object.Destroy(_root);
@@ -50,6 +67,8 @@ namespace Mvp.Battle
 
         public static void DestroyImmediateNow()
         {
+            TacticalDecoyService.Shutdown();
+            TauntEffectService.Shutdown();
             if (_root != null)
             {
                 Object.DestroyImmediate(_root);

@@ -1,0 +1,30 @@
+=== ActionChannelbag.bl_rna.properties ===
+  rna_type type=POINTER
+  slot_handle type=INT
+  slot type=POINTER
+  fcurves type=COLLECTION
+  groups type=COLLECTION
+
+act.slots count: 1
+channelbag() type: <class 'bpy.types.ActionChannelbag'>
+  cb.name ERR AttributeError("'ActionChannelbag' object has no attribute 'name'")
+  cb.fcurves len=3
+  cb.slot = bpy.data.actions['Probe_Act6.001'].slots["OBArmature"]
+  fcurves count: 3
+    fc data_path=pose.bones["Head"].rotation_euler array_index=0 nkeys=2
+      kp frame=1.0 value=0.10000000149011612 interp=BEZIER
+      kp frame=10.0 value=0.20000000298023224 interp=BEZIER
+    -> set LINEAR ok
+    fc data_path=pose.bones["Head"].rotation_euler array_index=1 nkeys=2
+      kp frame=1.0 value=0.0 interp=BEZIER
+      kp frame=10.0 value=0.0 interp=BEZIER
+    -> set LINEAR ok
+    fc data_path=pose.bones["Head"].rotation_euler array_index=2 nkeys=2
+      kp frame=1.0 value=0.0 interp=BEZIER
+      kp frame=10.0 value=0.0 interp=BEZIER
+    -> set LINEAR ok
+act.slots count: 1
+VERIFY fc pose.bones["Head"].rotation_euler LINEAR
+VERIFY fc pose.bones["Head"].rotation_euler LINEAR
+VERIFY fc pose.bones["Head"].rotation_euler LINEAR
+=== done ===

@@ -1,0 +1,137 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b2b2b2b22a5d4ee08f15000000000001, type: 3}
+  m_Name: DefaultTerrainDecorationProfile
+  m_EditorClassIdentifier: 
+  Enabled: 1
+  DecorationVersion: 1
+  GlobalDensity: 1
+  DeploymentClearance: 1
+  PortalClearance: 1
+  BuildingClearance: 1
+  Rules:
+  - Terrain: 0
+    Prefabs:
+    - {fileID: 160576, guid: 4823c2e26a7e0c341905255932dfc221, type: 3}
+    - {fileID: 107088, guid: c93f729820bcd81458f18118ecadb03e, type: 3}
+    - {fileID: 102252, guid: af278c61cdb50d84f9d69dfd3c5ce058, type: 3}
+    SpawnChance: 0.14
+    MinCount: 1
+    MaxCount: 1
+    PositionJitter: 0.18
+    TargetHeight: 0.18
+    MaxFootprint: 0.28
+    VerticalOffset: 0
+    RandomYaw: 0
+    CastShadows: 0
+    UseDecorationBase: 0
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+  - Terrain: 1
+    Prefabs:
+    - {fileID: 125994, guid: ab07ff15aeb50dc44a0b234592e0655e, type: 3}
+    - {fileID: 170750, guid: af145b4d5b8475b49b5b9fe9417fa4d4, type: 3}
+    - {fileID: 184688, guid: 0a93633d05165524fae0ac2ac62b6619, type: 3}
+    - {fileID: 169802, guid: b6db7bb6ece4b4741ad779fa4baa3cde, type: 3}
+    SpawnChance: 0.82
+    MinCount: 1
+    MaxCount: 2
+    PositionJitter: 0.16
+    TargetHeight: 0.86
+    MaxFootprint: 0.62
+    VerticalOffset: 0
+    RandomYaw: 1
+    CastShadows: 1
+    UseDecorationBase: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+  - Terrain: 2
+    Prefabs:
+    - {fileID: 134936, guid: d6defc9f29cee9c48bc86531fa36a185, type: 3}
+    - {fileID: 109350, guid: 7c82e2101116ff9488e1fb701f95d141, type: 3}
+    - {fileID: 114134, guid: e0a09c6a82dec5a469288b539b4b3a16, type: 3}
+    - {fileID: 191846, guid: 6af07f5ad8d257c4d8ba55665ed63f13, type: 3}
+    SpawnChance: 0.68
+    MinCount: 1
+    MaxCount: 2
+    PositionJitter: 0.18
+    TargetHeight: 0.48
+    MaxFootprint: 0.68
+    VerticalOffset: 0
+    RandomYaw: 1
+    CastShadows: 1
+    UseDecorationBase: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+  - Terrain: 3
+    Prefabs:
+    - {fileID: 126178, guid: 976f65eee2a300f45918c435030e8e05, type: 3}
+    - {fileID: 157120, guid: a031d2222404a1f4fa50d629889f82da, type: 3}
+    - {fileID: 172218, guid: 5f6e493aac04b2c4a9740e2c41e99d86, type: 3}
+    - {fileID: 161856, guid: 17434cfa8a68bbb469f2995f3731e66e, type: 3}
+    - {fileID: 114440, guid: 9ede5aa653d2320408b79a124bd384af, type: 3}
+    SpawnChance: 0.96
+    MinCount: 1
+    MaxCount: 2
+    PositionJitter: 0.12
+    TargetHeight: 0.78
+    MaxFootprint: 0.88
+    VerticalOffset: 0
+    RandomYaw: 1
+    CastShadows: 1
+    UseDecorationBase: 1
+    Tint: {r: 1, g: 1, b: 1, a: 1}
+  - Terrain: 4
+    Prefabs:
+    - {fileID: 114440, guid: 9ede5aa653d2320408b79a124bd384af, type: 3}
+    - {fileID: 186498, guid: b138500de16c31245bb2268c271447eb, type: 3}
+    - {fileID: 160914, guid: 476f14cb28257c14ab90ce8543b8e765, type: 3}
+    - {fileID: 106722, guid: cef619cdd7665374e88f34fda9bede80, type: 3}
+    SpawnChance: 0.96
+    MinCount: 1
+    MaxCount: 2
+    PositionJitter: 0.12
+    TargetHeight: 0.78
+    MaxFootprint: 0.88
+    VerticalOffset: 0
+    RandomYaw: 1
+    CastShadows: 1
+    UseDecorationBase: 1
+    Tint: {r: 0.92, g: 0.96, b: 1, a: 1}
+  - Terrain: 5
+    Prefabs:
+    - {fileID: 134936, guid: d6defc9f29cee9c48bc86531fa36a185, type: 3}
+    - {fileID: 109350, guid: 7c82e2101116ff9488e1fb701f95d141, type: 3}
+    - {fileID: 195622, guid: fd43365b28b858046a4e9726e08ea468, type: 3}
+    SpawnChance: 0.38
+    MinCount: 1
+    MaxCount: 1
+    PositionJitter: 0.18
+    TargetHeight: 0.48
+    MaxFootprint: 0.62
+    VerticalOffset: 0
+    RandomYaw: 1
+    CastShadows: 1
+    UseDecorationBase: 1
+    Tint: {r: 0.95, g: 0.76, b: 0.42, a: 1}
+  - Terrain: 9
+    Prefabs:
+    - {fileID: 198784, guid: 57c87a43d50d11a46bbe549159564d88, type: 3}
+    - {fileID: 124452, guid: 762efb4942d0d164b8040c0e0d281178, type: 3}
+    SpawnChance: 1
+    MinCount: 1
+    MaxCount: 1
+    PositionJitter: 0
+    TargetHeight: 0.24
+    MaxFootprint: 0.96
+    VerticalOffset: 0
+    RandomYaw: 0
+    CastShadows: 0
+    UseDecorationBase: 0
+    Tint: {r: 1, g: 1, b: 1, a: 1}

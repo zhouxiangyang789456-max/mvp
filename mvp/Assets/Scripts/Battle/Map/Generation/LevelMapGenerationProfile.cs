@@ -26,6 +26,9 @@ namespace Mvp.Battle.Map.Generation
         /// <summary>Participates in deterministic seed derivation.</summary>
         public uint ProfileSalt;
 
+        [Tooltip("Optional map built with HandMapBuilder. Used when BattleMapSource is HandAuthored.")]
+        public HandAuthoredMapData HandMapOverride;
+
         [Tooltip("Rules must not overlap; gaps fall back to default settings.")]
         public List<LevelMapGenerationRule> Rules = new List<LevelMapGenerationRule>();
 

@@ -34,7 +34,8 @@ namespace Mvp.Shared
             for (int i = 0; i < definition.StartingUnits.Count; i++)
             {
                 var source = definition.StartingUnits[i];
-                entry.StartingUnits.Add(new StartingUnitEntry(source.UnitType, source.Count));
+                entry.StartingUnits.Add(new StartingUnitEntry(
+                    source.UnitType, source.Count, source.MembersPerSlot));
             }
             return entry;
         }

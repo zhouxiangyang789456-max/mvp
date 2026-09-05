@@ -84,6 +84,32 @@ namespace Mvp.Battle.Vision
             }
         }
 
+        /// <summary>
+        /// Queries opposing units within a Chebyshev radius (used by concealment
+        /// discovery and guard auto-attack, whose range metric is the attack grid
+        /// distance rather than a Euclidean circle).
+        /// </summary>
+        public void QueryEnemiesChebyshev(Vector2Int center, int radius, TeamId observerTeam,
+            List<UnitView> output)
+        {
+            if (output == null) return;
+            for (int y = center.y - radius; y <= center.y + radius; y++)
+            for (int x = center.x - radius; x <= center.x + radius; x++)
+            {
+                int dx = x - center.x;
+                int dy = y - center.y;
+                if (Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy)) > radius) continue;
+                List<UnitView> bucket;
+                if (!_buckets.TryGetValue(new Vector2Int(x, y), out bucket)) continue;
+                for (int i = 0; i < bucket.Count; i++)
+                {
+                    var unit = bucket[i];
+                    if (!IsIndexable(unit) || unit.Data.Team == observerTeam) continue;
+                    output.Add(unit);
+                }
+            }
+        }
+
         public void Clear()
         {
             _buckets.Clear();

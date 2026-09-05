@@ -2,6 +2,13 @@ using UnityEngine;
 
 namespace Mvp.Shared
 {
+    public enum UnitExitState
+    {
+        Active,
+        Extracting,
+        Extracted
+    }
+
     /// <summary>Mutable runtime state of a unit instance.</summary>
     public sealed class UnitRuntimeData
     {
@@ -11,6 +18,8 @@ namespace Mvp.Shared
         public string CommanderGroupId;
         public int FormationSlotIndex;
         public int SpawnOrder;
+        /// <summary>Visual members represented by this one logical grid unit.</summary>
+        public int MembersPerSlot = 1;
         public Vector2Int GridPosition;
         public Vector3 WorldPosition;
         public UnitCommand CurrentCommand = new UnitCommand();
@@ -21,5 +30,6 @@ namespace Mvp.Shared
         /// </summary>
         public int RuntimeMaxHealth;
         public UnitState State;
+        public UnitExitState ExitState = UnitExitState.Active;
     }
 }

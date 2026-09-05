@@ -7,6 +7,12 @@ namespace Mvp.Battle
         SelectionRing,
         MoveTargetMarker,
         DeploymentCellHighlight,
-        AttackRangeHighlight
+        AttackRangeHighlight,
+        /// <summary>远攻 skill range union highlight (per-cell overlap brightness).</summary>
+        SkillRangeHighlight,
+        /// <summary>远攻 current hovered-cell cursor (pulsing red square).</summary>
+        SkillRangeCursor,
+        /// <summary>隐蔽 blind zone marker (visual aid while a group is hidden).</summary>
+        SkillBlindZone
     }
 }

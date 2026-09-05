@@ -1,0 +1,186 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 6
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: portal
+  m_Shader: {fileID: 4800000, guid: 91315f2213d38234f9c520d26b14edd7, type: 3}
+  m_ShaderKeywords: _ADD_PRECOMPUTED_VELOCITY _BLENDMODE_ALPHA _DISABLE_SSR _DOUBLESIDED_ON
+    _ENABLE_FOG_ON_TRANSPARENT _SURFACE_TYPE_TRANSPARENT
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 1
+  m_CustomRenderQueue: 3000
+  stringTagMap:
+    MotionVector: User
+    RenderType: Transparent
+  disabledShaderPasses:
+  - TransparentBackface
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BumpMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailAlbedoMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailMask:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailNormalMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DisplacementNoise:
+        m_Texture: {fileID: 2800000, guid: ecea10d8fc11e8d4b9ab34bdd682f532, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DisplacementNoise1:
+        m_Texture: {fileID: 2800000, guid: ecea10d8fc11e8d4b9ab34bdd682f532, type: 3}
+        m_Scale: {x: 0.1, y: 0.1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _GlowLine:
+        m_Texture: {fileID: 2800000, guid: cef6570a721e7994abff60c965b7aca2, type: 3}
+        m_Scale: {x: 1, y: 0.63}
+        m_Offset: {x: 0, y: 0.37}
+    - _LineTex:
+        m_Texture: {fileID: 2800000, guid: cef6570a721e7994abff60c965b7aca2, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0.3045}
+    - _MainTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MetallicGlossMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _Noise:
+        m_Texture: {fileID: 2800000, guid: ecea10d8fc11e8d4b9ab34bdd682f532, type: 3}
+        m_Scale: {x: 3, y: 6}
+        m_Offset: {x: 0, y: 0}
+    - _OcclusionMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ParallaxMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _texcoord:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Floats:
+    - _AddPrecomputedVelocity: 1
+    - _AlphaCutoff: 0.5
+    - _AlphaCutoffEnable: 0
+    - _AlphaDstBlend: 10
+    - _AlphaSrcBlend: 1
+    - _BlackGradientLength: -0.45
+    - _BlackGradientPower: 25.3
+    - _BlendMode: 0
+    - _BumpScale: 1
+    - _CullMode: 0
+    - _CullModeForward: 0
+    - _Cutoff: 0.5
+    - _DetailNormalMapScale: 1
+    - _DoubleSidedEnable: 1
+    - _DoubleSidedNormalMode: 2
+    - _DstBlend: 10
+    - _EnableFogOnTransparent: 1
+    - _GlossMapScale: 1
+    - _Glossiness: 0
+    - _GlossyReflections: 1
+    - _GlowIntensity: 20
+    - _GlowPower: 5.37
+    - _GradientLength: -0.4
+    - _GradientPower: 7.32
+    - _HUE: 0
+    - _HueOffset: 0
+    - _Intensity: 1
+    - _LineMul: 1.74
+    - _LinePower: 2.94
+    - _LineSub: 3.5
+    - _Metallic: 0
+    - _Mode: 0
+    - _NoiseAffectAlpha: 0
+    - _NoiseFactor: 5
+    - _NoisePower: 1
+    - _NoiseSub: 14.55
+    - _NosieFactor: 1.22
+    - _OcclusionStrength: 1
+    - _Parallax: 0.02
+    - _ReceivesSSR: 0
+    - _RenderQueueType: 5
+    - _RequireSplitLighting: 0
+    - _SmoothnessTextureChannel: 0
+    - _SoftDepthDistance: 0.5
+    - _SoftIntersectionDistance: 0.5
+    - _SpecularHighlights: 1
+    - _SrcBlend: 1
+    - _StencilRef: 0
+    - _StencilRefDepth: 32
+    - _StencilRefDistortionVec: 64
+    - _StencilRefGBuffer: 34
+    - _StencilRefMV: 160
+    - _StencilWriteMask: 3
+    - _StencilWriteMaskDepth: 48
+    - _StencilWriteMaskDistortionVec: 64
+    - _StencilWriteMaskGBuffer: 51
+    - _StencilWriteMaskMV: 176
+    - _SurfaceType: 1
+    - _TessEdgeLength: 16
+    - _TessMax: 25
+    - _TessMaxDisp: 25
+    - _TessMin: 10
+    - _TessPhongStrength: 0.5
+    - _TessValue: 16
+    - _TransparentBackfaceEnable: 0
+    - _TransparentCullMode: 2
+    - _TransparentSortPriority: 0
+    - _TransparentZWrite: 1
+    - _UVSec: 0
+    - _UseShadowThreshold: 0
+    - _ZTestDepthEqualForOpaque: 4
+    - _ZTestGBuffer: 4
+    - _ZTestTransparent: 4
+    - _ZWrite: 0
+    m_Colors:
+    - _BackGradientColor: {r: 0.13125534, g: 0.014819147, b: 0.199, a: 1}
+    - _BackGradientRemap: {r: 0, g: 1, b: 4.73, a: -10.48}
+    - _Color: {r: 0.15699537, g: 0.71021706, b: 1.5849056, a: 1}
+    - _Color0: {r: 1, g: 0, b: 0, a: 1}
+    - _DisplacementNoiseRemap: {r: 0, g: 1, b: 0, a: 0.15}
+    - _DisplacementNoiseRemap1: {r: 0, g: 1, b: 0, a: 0.3}
+    - _DisplacementNoiseSpeed: {r: 0.1, g: 0.1, b: 0, a: 0}
+    - _DisplacementNoiseSpeed1: {r: 0.1, g: 0.1, b: 0, a: 0}
+    - _DoubleSidedConstants: {r: 1, g: 1, b: -1, a: 0}
+    - _EmissionColor: {r: 1, g: 1, b: 1, a: 1}
+    - _GlowLineColor: {r: 0.7827779, g: 3.85589, b: 8.734157, a: 1}
+    - _GlowLineOffset: {r: 0, g: 0, b: 0, a: 0}
+    - _GlowLineRemap: {r: 0, g: 1, b: 0, a: 1}
+    - _GlowRemap: {r: 0, g: 0.23, b: 3.15, a: 0.74}
+    - _Gradient: {r: 0.45289227, g: 0.13238695, b: 0.8018868, a: 0}
+    - _GradientMaskRemap: {r: 0.26, g: 0.34, b: 0, a: 1}
+    - _LineTint: {r: 12.235505, g: 98.758, b: 166.92725, a: 1}
+    - _MaskGlowRemap: {r: 0.16, g: 0.75, b: 1, a: -3.48}
+    - _MaskRemap: {r: 0.24, g: 0.5, b: 1.58, a: -1.75}
+    - _NoiseAlphaRemap: {r: 0, g: 1, b: 0, a: 1}
+    - _NoiseRemap: {r: 0, g: 1, b: 0, a: 1}
+    - _NoiseSpeed: {r: -0.2, g: 0.3, b: 0, a: 0}
+    - _ThinLineColor: {r: 0, g: 11.043138, b: 23.968628, a: 1}
+    - _Tint: {r: 1, g: 0, b: 0, a: 1}
+    - _UVRemap: {r: 0, g: 1, b: 0, a: 2}

@@ -3,6 +3,7 @@ using UnityEngine;
 using Mvp.Battle.Map;
 using Mvp.Battle.Units;
 using Mvp.Shared;
+using Mvp.Shared.Skills;
 using Mvp.Battle.Commanders;
 using Mvp.Battle.Vision;
 
@@ -26,6 +27,7 @@ namespace Mvp.Battle.Formation
         public FormationType CurrentFormation { get; private set; } = FormationType.Vertical;
         public bool IsDeploying { get; private set; }
         public bool IsCombatEditing { get; private set; }
+        public bool WillHoldAfterCombatEdit { get { return _holdAfterCombatEdit; } }
         public Vector2Int Anchor { get { return _anchor; } }
 
         const int RangeRadius = 1; // fixed 3x3 deployment grid
@@ -43,6 +45,7 @@ namespace Mvp.Battle.Formation
         readonly Dictionary<string, int> _draftAssignments = new Dictionary<string, int>();
         CommanderGroupRuntime _editingGroup;
         FormationType _draftFormation;
+        bool _holdAfterCombatEdit;
 
         void Awake()
         {
@@ -144,9 +147,15 @@ namespace Mvp.Battle.Formation
 
         public bool BeginCombatEdit(CommanderGroupRuntime group, out string reason)
         {
+            return BeginCombatEdit(group, false, out reason);
+        }
+
+        public bool BeginCombatEdit(CommanderGroupRuntime group, bool holdAfterConfirm, out string reason)
+        {
             if (!CanBeginCombatEdit(group, out reason)) return false;
             CancelCombatEdit();
             _editingGroup = group;
+            _holdAfterCombatEdit = holdAfterConfirm;
             _draftFormation = group.Formation;
             _anchor = group.AnchorCell;
             _draftAssignments.Clear();
@@ -171,6 +180,7 @@ namespace Mvp.Battle.Formation
         {
             IsCombatEditing = false;
             _editingGroup = null;
+            _holdAfterCombatEdit = false;
             _draftFormation = FormationType.Custom;
             _draftAssignments.Clear();
             HideRange();
@@ -187,9 +197,16 @@ namespace Mvp.Battle.Formation
             }
             if (!CanBeginCombatEdit(_editingGroup, out reason)) return false;
             var commands = CommanderGroupCommandController.Instance;
+            bool enterHold = _holdAfterCombatEdit;
+            if (enterHold)
+            {
+                _editingGroup.Skills.ResetModes();
+                _editingGroup.Skills.PersistentMode = PersistentSkillMode.Guard;
+            }
             if (commands == null || !commands.CommandCustomRegroup(
                 _editingGroup, _draftAssignments, _draftFormation))
             {
+                if (enterHold) _editingGroup.Skills.ResetModes();
                 reason = "目标格被占用或部分单位无法到达，重整未执行";
                 return false;
             }

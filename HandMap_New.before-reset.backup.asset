@@ -1,0 +1,998 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c725f1f1c9dd4e5714feb4f30fcd909a, type: 3}
+  m_Name: HandMap_New
+  m_EditorClassIdentifier: 
+  Width: 50
+  Height: 50
+  Tiles:
+  - X: 9
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile1_Base.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 9
+  - X: 7
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile1_Base.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 9
+  - X: 2
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile1_Base.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 9
+  - X: 8
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_E.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 13
+    Y: 2
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 13
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 13
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 13
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 12
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 4
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_E.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 9
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_F.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 10
+    Y: 2
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 11
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 10
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 10
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 9
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 8
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 7
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 6
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 5
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 7
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 0
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 1
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 0
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 1
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 0
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 0
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 0
+    Y: 14
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 1
+    Y: 14
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 1
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 2
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 8
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 7
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 9
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 10
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 9
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 7
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 13
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 13
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 12
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 11
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 9
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 8
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 11
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_H.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 12
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_H.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 11
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_H.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 10
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_H.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 12
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 12
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 11
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 0
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_C.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 0
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_D.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 3
+    Y: 0
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_E.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 13
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_F.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 18
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_1_brick_G.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 9
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Base1C.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 10
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Base1C.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 15
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Base1D.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 19
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Base1E.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 16
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Base4.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 0
+  - X: 7
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_01.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 8
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_01.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 10
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_01.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 8
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_04.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 12
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_05.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 9
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 9
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 10
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 9
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 10
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 11
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 12
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 13
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 14
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 14
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 15
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 15
+    Y: 14
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 15
+    Y: 15
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_06.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 8
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_07.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 8
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 7
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 8
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 6
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 5
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 5
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 5
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 6
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 6
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 7
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_09.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 0
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Plants_01B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 3
+  - X: 1
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Plants_04B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 3
+  - X: 1
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Plants_04B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 3
+  - X: 2
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Plants_04B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 3
+  - X: 4
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Bridge1.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 6
+  - X: 4
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Bridge1.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 6
+  - X: 1
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Bridge2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 6
+  - X: 1
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Bridge2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 6
+  - X: 1
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Bridge2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 6
+  - X: 1
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Water1A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 4
+  - X: 2
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Water1A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 4
+  - X: 4
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Group2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 1
+  - X: 6
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Group2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 1
+  - X: 4
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Group2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 1
+  - X: 3
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Group14.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 1
+  - X: 3
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Group14.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 1
+  - X: 3
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Tiles_Groups/Tile_Group14.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 1
+  - X: 2
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Fence1_3.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 9
+  - X: 2
+    Y: 8
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Fence1_3.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 9
+  - X: 3
+    Y: 9
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Fence1_3.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 9
+  - X: 3
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 4
+    Y: 10
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 3
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 3
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 4
+    Y: 11
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 5
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 4
+    Y: 12
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 2
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 3
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 4
+    Y: 13
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 4
+    Y: 14
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 3
+    Y: 14
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Rock_11.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 7
+  - X: 5
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 5
+    Y: 7
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 6
+    Y: 6
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1A.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 6
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 5
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 5
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 4
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 3
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 3
+    Y: 4
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 3
+    Y: 5
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 6
+    Y: 1
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp2B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 6
+    Y: 2
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Stairs_1.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 6
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Stairs_1.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 7
+    Y: 3
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Stairs_1.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 8
+    Y: 1
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Stairs_2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 8
+    Y: 2
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Stairs_2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 7
+    Y: 1
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Stairs_2.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 7
+    Y: 2
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  - X: 9
+    Y: 1
+    Z: 0
+    PrefabPath: Assets/Isometric Pack 3d/Props/Tile_Ramp1B.prefab
+    RotationY: 0
+    HeightOffset: 0
+    Category: 5
+  _legacyEnumMigrated: 1

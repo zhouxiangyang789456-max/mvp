@@ -3,6 +3,7 @@ using System;
 namespace Mvp.Battle.Outcome
 {
     public enum BattleOutcome { None, Victory, Defeat, Draw, Aborted }
+    public enum BattleObjectiveType { Elimination, TimedExtraction }
     public enum BattleOutcomeState { Registering, Armed, Running, Candidate, Resolved, Presenting, Transitioning, Aborted }
 
     [Serializable]
@@ -23,5 +24,11 @@ namespace Mvp.Battle.Outcome
         public int RewardGold;
         public string RewardGrantId;
         public int ShopRandomSeed;
+        public BattleObjectiveType ObjectiveType;
+        public float TimeLimitSeconds;
+        public float RemainingSeconds;
+        public int RequiredExtractionCount;
+        public int ExtractedUnitCount;
+        public bool ExtractionCompleted;
     }
 }

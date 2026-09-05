@@ -117,5 +117,36 @@ namespace Mvp.Battle.Commanders
             }
             if (GroupDefeated != null) GroupDefeated(group);
         }
+
+        public void NotifyUnitExtracted(UnitView unit)
+        {
+            var group = Find(unit);
+            if (group == null) return;
+            group.Members.Remove(unit);
+            group.ExtractedMemberCount++;
+            if (group.Members.Count > 0) return;
+
+            group.State = CommanderGroupState.Extracted;
+            if (BattleVisionService.Instance != null)
+                BattleVisionService.Instance.RemoveGroup(group);
+            if (FormationReservationService.Instance != null)
+                FormationReservationService.Instance.Release(group.GroupId);
+            if (group.MapMarker != null) group.MapMarker.gameObject.SetActive(false);
+            if (ActiveGroup == group)
+            {
+                CommanderGroupRuntime next = null;
+                for (int i = 0; i < _groups.Count; i++)
+                {
+                    if (_groups[i].Team == TeamId.Player && !_groups[i].IsDefeated &&
+                        !_groups[i].IsExtracted && _groups[i].AliveMemberCount > 0)
+                    {
+                        next = _groups[i];
+                        break;
+                    }
+                }
+                if (next != null) SetActive(next);
+                else ClearActive();
+            }
+        }
     }
 }

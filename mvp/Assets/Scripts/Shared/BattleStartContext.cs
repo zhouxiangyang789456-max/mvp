@@ -1,4 +1,5 @@
 using Mvp.Battle.Map.Generation;
+using Mvp.Battle.Map;
 
 namespace Mvp.Shared
 {
@@ -18,5 +19,6 @@ namespace Mvp.Shared
         // battle grid resolves the rule and generates/validates the map from them.
         public static int LevelIndex = 1;
         public static LevelMapGenerationProfile MapProfile;
+        public static BattleMapSource? MapSourceOverride;
     }
 }

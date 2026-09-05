@@ -238,7 +238,7 @@ namespace Mvp.CommanderSelect
             {
                 var e = c.StartingUnits[i];
                 if (i > 0) sb.Append('\n');
-                sb.Append(UnitDisplayName(e.UnitType)).Append(" ×").Append(e.Count);
+                AppendStartingUnit(sb, e);
             }
             SetText(_summaryBody3, sb.ToString());
 
@@ -256,7 +256,7 @@ namespace Mvp.CommanderSelect
             {
                 var e = c.StartingUnits[i];
                 if (i > 0) sb.Append("、");
-                sb.Append(UnitDisplayName(e.UnitType)).Append(" ×").Append(e.Count);
+                AppendStartingUnit(sb, e);
             }
             SetText(_detailBody, sb.ToString());
         }
@@ -272,9 +272,23 @@ namespace Mvp.CommanderSelect
             switch (type)
             {
                 case UnitType.Infantry: return "步兵";
+                case UnitType.MachineGunner: return "机枪兵";
+                case UnitType.Scout: return "侦察兵";
+                case UnitType.ScoutCar: return "侦察车";
                 case UnitType.Tank: return "坦克";
+                case UnitType.HeavyTank: return "大坦克";
+                case UnitType.SelfPropelledArtillery: return "自行火炮";
+                case UnitType.RocketArtillery: return "火箭炮车";
                 default: return type.ToString();
             }
+        }
+
+        static void AppendStartingUnit(StringBuilder sb, StartingUnitEntry entry)
+        {
+            sb.Append(UnitDisplayName(entry.UnitType))
+                .Append(" ").Append(entry.Count).Append("格")
+                .Append("（每格").Append(entry.MembersPerSlot)
+                .Append(entry.UnitType == UnitType.Tank ? "辆" : "人").Append("）");
         }
 
         static void SetText(TextMeshProUGUI text, string s)
@@ -288,6 +302,8 @@ namespace Mvp.CommanderSelect
         {
             if (_embarkButton == null) return;
             bool ready = _selected.Count > 0;
+            for (int i = 0; ready && i < _selected.Count; i++)
+                ready = _commanders[_selected[i]].HasValidSingleTypeStartingArmy();
             _embarkButton.interactable = ready;
             var label = _embarkButton.transform.Find("Label")?.GetComponent<TextMeshProUGUI>();
             if (label != null)
@@ -304,6 +320,12 @@ namespace Mvp.CommanderSelect
             {
                 int commanderIndex = _selected[i];
                 if (commanderIndex < 0 || commanderIndex >= _commanders.Count) continue;
+                if (!_commanders[commanderIndex].HasValidSingleTypeStartingArmy())
+                {
+                    Debug.LogError("[CommanderSelect] Invalid single-type starting army: " +
+                        _commanders[commanderIndex].Id);
+                    return;
+                }
                 roster.Commanders.Add(ExpeditionCommanderEntry.FromDefinition(
                     _commanders[commanderIndex], roster.Commanders.Count));
             }

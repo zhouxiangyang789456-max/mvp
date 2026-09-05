@@ -79,13 +79,19 @@ namespace Mvp.Battle
         {
             RegisterFactory(UiPoolType.UnitHealthBar, CreateHealthBar, 8);
             RegisterFactory(UiPoolType.SelectionRing,
-                () => CreateQuad(UiPoolType.SelectionRing, new Color(1f, 0.9f, 0.4f, 0.7f)), 4);
+                () => CreateQuad(UiPoolType.SelectionRing, new Color(0.949f, 0.788f, 0.298f, 0.7f)), 4); // #F2C94C
             RegisterFactory(UiPoolType.MoveTargetMarker,
                 () => CreateQuad(UiPoolType.MoveTargetMarker, new Color(0.4f, 1f, 0.5f, 0.9f)), 4);
             RegisterFactory(UiPoolType.DeploymentCellHighlight,
                 () => CreateQuad(UiPoolType.DeploymentCellHighlight, new Color(0.35f, 1f, 0.45f, 0.45f)), 25);
             RegisterFactory(UiPoolType.AttackRangeHighlight,
                 () => CreateQuad(UiPoolType.AttackRangeHighlight, new Color(1f, 0.56f, 0.18f, 0.32f)), 81);
+            RegisterFactory(UiPoolType.SkillRangeHighlight,
+                () => CreateQuad(UiPoolType.SkillRangeHighlight, new Color(0.2f, 0.6f, 1f, 0.25f)), 121);
+            RegisterFactory(UiPoolType.SkillRangeCursor,
+                () => CreateQuad(UiPoolType.SkillRangeCursor, new Color(1f, 0.2f, 0.2f, 0.55f)), 4);
+            RegisterFactory(UiPoolType.SkillBlindZone,
+                () => CreateQuad(UiPoolType.SkillBlindZone, new Color(0.3f, 0.3f, 0.3f, 0.45f)), 8);
         }
 
         static PoolableUi CreateQuad(UiPoolType type, Color color)

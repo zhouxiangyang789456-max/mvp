@@ -10,7 +10,7 @@ namespace Mvp.Battle
     public sealed class UnitHealthBar : MonoBehaviour
     {
         public const float WorldWidth = 1.1f;
-        public const float WorldHeight = 0.14f;
+        public const float WorldHeight = 0.105f;   // shrunk ~25% for a slimmer bar
 
         Transform _fill;
         SpriteRenderer _fillRenderer;
@@ -24,11 +24,22 @@ namespace Mvp.Battle
 
             var sprite = SharedSprites.White;
 
+            // Border quad sits behind the background and peeks out as a slim
+            // dark frame (#0C141D). Slightly larger than the background.
+            var borderGo = new GameObject("Border");
+            borderGo.transform.SetParent(transform, false);
+            var border = borderGo.AddComponent<SpriteRenderer>();
+            border.sprite = sprite;
+            border.color = new Color(0.047f, 0.078f, 0.114f, 0.9f);   // #0C141D
+            border.sortingOrder = 99;
+            borderGo.transform.localScale =
+                new Vector3(WorldWidth + 0.05f, WorldHeight + 0.02f, 1f);
+
             var bgGo = new GameObject("Bg");
             bgGo.transform.SetParent(transform, false);
             var bg = bgGo.AddComponent<SpriteRenderer>();
             bg.sprite = sprite;
-            bg.color = new Color(0f, 0f, 0f, 0.85f);
+            bg.color = new Color(0.090f, 0.137f, 0.200f, 0.9f);       // #172333
             bg.sortingOrder = 100;
             bgGo.transform.localScale = new Vector3(WorldWidth, WorldHeight, 1f);
 
@@ -37,7 +48,7 @@ namespace Mvp.Battle
             _fill = fillGo.transform;
             _fillRenderer = fillGo.AddComponent<SpriteRenderer>();
             _fillRenderer.sprite = sprite;
-            _fillRenderer.color = new Color(0.35f, 1f, 0.35f, 0.95f);
+            _fillRenderer.color = new Color(0.271f, 0.722f, 0.420f, 0.95f); // #45B86B
             _fillRenderer.sortingOrder = 101;
             SetFill(1f);
         }

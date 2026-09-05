@@ -14,10 +14,7 @@ namespace Mvp.CommanderSelect
         {
             BuildElena(),
             BuildCassian(),
-            BuildVera(),
-            BuildOlivia(),
-            BuildDario(),
-            BuildIvan()
+            BuildVera()
         };
 
         public static IReadOnlyList<CommanderDefinition> GetAll()
@@ -46,7 +43,8 @@ namespace Mvp.CommanderSelect
                 MaxHealth = 100,
                 CurrentHealth = 86,
                 PortraitAssetId = "Battle/UI/CommanderPortraits/elena_portrait",
-                MapPortraitAssetId = "Battle/UI/CommanderMarkers/elena_map_marker"
+                MapPortraitAssetId = "Battle/UI/CommanderMarkers/elena_map_marker",
+                TroopBranch = CommanderTroopBranch.Infantry
             };
             c.AffinityArchetypeIds.Add("archetype_frenzy_burst");
             c.AffinityArchetypeIds.Add("archetype_frenzy_sustain");
@@ -54,8 +52,7 @@ namespace Mvp.CommanderSelect
             c.Traits.Add("谨慎");
             c.Traits.Add("鼓舞");
             c.Traits.Add("坚韧");
-            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Infantry, 2));
-            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Tank, 1));
+            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Infantry, 1, 3));
             AddIds(c,
                 "trait_elena_bloodthirst", "trait_elena_never_fall", "trait_elena_blood_price",
                 "trait_elena_berserk_moment", "trait_elena_battle_blood", "trait_elena_hunt_instinct",
@@ -78,7 +75,8 @@ namespace Mvp.CommanderSelect
                 MaxHealth = 120,
                 CurrentHealth = 112,
                 PortraitAssetId = "Battle/UI/CommanderPortraits/cassian_portrait",
-                MapPortraitAssetId = "Battle/UI/CommanderMarkers/cassian_map_marker"
+                MapPortraitAssetId = "Battle/UI/CommanderMarkers/cassian_map_marker",
+                TroopBranch = CommanderTroopBranch.Tank
             };
             c.AffinityArchetypeIds.Add("archetype_bulwark_shield");
             c.AffinityArchetypeIds.Add("archetype_bulwark_thorns");
@@ -86,8 +84,7 @@ namespace Mvp.CommanderSelect
             c.Traits.Add("守备");
             c.Traits.Add("纪律");
             c.Traits.Add("坚守");
-            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Infantry, 3));
-            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Tank, 1));
+            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Tank, 1, 1));
             AddIds(c,
                 "trait_cassian_iron_wall", "trait_cassian_thorn_reflect", "trait_cassian_hold_line",
                 "trait_cassian_immovable", "trait_cassian_iron_formation", "trait_cassian_shield_wall",
@@ -110,7 +107,8 @@ namespace Mvp.CommanderSelect
                 MaxHealth = 95,
                 CurrentHealth = 90,
                 PortraitAssetId = "Battle/UI/CommanderPortraits/vera_portrait",
-                MapPortraitAssetId = "Battle/UI/CommanderMarkers/vera_map_marker"
+                MapPortraitAssetId = "Battle/UI/CommanderMarkers/vera_map_marker",
+                TroopBranch = CommanderTroopBranch.Ranged
             };
             c.AffinityArchetypeIds.Add("archetype_lethality_crit");
             c.AffinityArchetypeIds.Add("archetype_lethality_execute");
@@ -118,8 +116,7 @@ namespace Mvp.CommanderSelect
             c.Traits.Add("疾攻");
             c.Traits.Add("迂回");
             c.Traits.Add("均衡");
-            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Infantry, 3));
-            c.StartingUnits.Add(new StartingUnitEntry(UnitType.Tank, 1));
+            c.StartingUnits.Add(new StartingUnitEntry(UnitType.RocketArtillery, 1, 1));
             AddIds(c,
                 "trait_vera_lethal_blow", "trait_vera_beheading", "trait_vera_shadow_strike",
                 "trait_vera_death_descend", "trait_vera_fatal_weakness", "trait_vera_falcon_dive",

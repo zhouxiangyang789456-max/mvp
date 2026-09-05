@@ -2,7 +2,10 @@ using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Map;
 using Mvp.Battle.Units;
+using Mvp.Battle.Buildings;
+using Mvp.Battle.Skills;
 using Mvp.Shared;
+using Mvp.Shared.Skills;
 using Mvp.Battle.Formation;
 using Mvp.Battle.Outcome;
 
@@ -15,9 +18,12 @@ namespace Mvp.Battle.Commanders
         readonly List<Vector2Int> _slots = new List<Vector2Int>();
         readonly List<UnitView> _members = new List<UnitView>();
         readonly List<Vector2Int> _pathBuffer = new List<Vector2Int>();
+        readonly List<List<Vector2Int>> _validatedPaths = new List<List<Vector2Int>>(9);
+        int _validatedPathCount;
         readonly List<string> _completedAttackGroups = new List<string>();
         readonly Dictionary<string, AttackPlan> _attackPlans =
             new Dictionary<string, AttackPlan>();
+        public string LastMoveFailureReason { get; private set; }
 
         void Awake()
         {
@@ -80,11 +86,24 @@ namespace Mvp.Battle.Commanders
             {
                 var group = registry.Groups[i];
                 if (group == null || group.IsDefeated) continue;
+                if (group.State == CommanderGroupState.Capturing)
+                {
+                    RefreshCapturingGroup(group);
+                    continue;
+                }
                 if (group.State == CommanderGroupState.Moving ||
                     group.State == CommanderGroupState.Regrouping)
                 {
                     if (!AtLockedSlots(group, group.AnchorCell)) continue;
                     ReleaseReservation(group);
+                    if (group.Skills.PersistentMode == PersistentSkillMode.Guard)
+                    {
+                        // 防御/警戒: once the group reaches its locked slots it enters
+                        // Holding and only fires at enemies in range (never chases).
+                        group.State = CommanderGroupState.Holding;
+                        group.CurrentCommand.Type = GroupCommandType.Hold;
+                        continue;
+                    }
                     group.State = CommanderGroupState.Idle;
                     group.CurrentCommand.Type = GroupCommandType.None;
                     continue;
@@ -117,19 +136,35 @@ namespace Mvp.Battle.Commanders
             }
         }
 
+        /// <summary>
+        /// Quantizes the clicked direction into the group's 8-direction facing.
+        /// Zero / in-place clicks keep the previous facing (§3.3).
+        /// </summary>
+        static void ApplyFacing(CommanderGroupRuntime group, Vector2Int dir)
+        {
+            var q = FormationFacing.Quantize(dir);
+            if (q != Vector2Int.zero) group.Facing = q;
+        }
+
         public bool CommandMove(CommanderGroupRuntime group, Vector2Int targetAnchor)
         {
+            LastMoveFailureReason = null;
             if (BattleSimulationState.IsFrozen) return false;
             var grid = BattleGridController.Instance;
             var movement = UnitMovementController.Instance;
             if (group == null || grid == null || movement == null || group.IsDefeated) return false;
 
+            InterruptPersistentModes(group);
             _attackPlans.Remove(group.GroupId);
+            group.CaptureBuildingId = null;
+            ApplyFacing(group, targetAnchor - group.AnchorCell);
             EnsureLockedLayout(group);
             if (!IssueLockedMove(group, targetAnchor))
             {
                 CollectAlive(group, _members);
                 FlashGroup(_members);
+                if (string.IsNullOrEmpty(LastMoveFailureReason))
+                    LastMoveFailureReason = "阵型受阻";
                 return false;
             }
 
@@ -142,6 +177,120 @@ namespace Mvp.Battle.Commanders
             return true;
         }
 
+        public bool CommandMove(CommanderGroupRuntime group, Vector2Int targetAnchor,
+            out string failureReason)
+        {
+            bool accepted = CommandMove(group, targetAnchor);
+            failureReason = accepted ? null :
+                (string.IsNullOrEmpty(LastMoveFailureReason) ? "目标不可达" : LastMoveFailureReason);
+            return accepted;
+        }
+
+        /// <summary>
+        /// 防御/警戒 (skill_guard): the group keeps its locked formation, members return
+        /// to their locked slots, then the group enters Holding. Holding groups only fire
+        /// at enemies that enter range — they never chase (the auto-attack tick lives in
+        /// GroupSkillController). GroupSkillController sets PersistentMode = Guard before
+        /// calling this; the Regrouping→Holding transition happens in RefreshCompletedGroupMoves.
+        /// </summary>
+        public bool CommandHold(CommanderGroupRuntime group)
+        {
+            if (BattleSimulationState.IsFrozen) return false;
+            var grid = BattleGridController.Instance;
+            if (group == null || grid == null || group.IsDefeated) return false;
+
+            _attackPlans.Remove(group.GroupId);
+            group.CaptureBuildingId = null;
+            EnsureLockedLayout(group);
+            if (!IssueLockedMove(group, group.AnchorCell))
+            {
+                CollectAlive(group, _members);
+                FlashGroup(_members);
+                return false;
+            }
+            group.State = CommanderGroupState.Regrouping;
+            group.CurrentCommand.Type = GroupCommandType.Hold;
+            group.CurrentCommand.TargetCell = group.AnchorCell;
+            group.CurrentCommand.TargetGroupId = null;
+            group.CurrentCommand.Sequence++;
+            return true;
+        }
+
+        /// <summary>
+        /// Clears the active persistent tactical mode (战斗技能系统开发文档 §3.1). Called
+        /// before any command that conflicts with a persistent mode (move / attack /
+        /// regroup / capture). Uses ResetModes so the skill sequence bumps and any
+        /// in-flight skill targeting/result is invalidated.
+        /// </summary>
+        public void InterruptPersistentModes(CommanderGroupRuntime group)
+        {
+            if (group == null || group.Skills.PersistentMode == PersistentSkillMode.None) return;
+            var previous = group.Skills.PersistentMode;
+            group.Skills.ResetModes();
+            if (previous == PersistentSkillMode.Concealment)
+                ConcealmentService.EndConcealment(group);
+            if (previous == PersistentSkillMode.Guard && group.State == CommanderGroupState.Holding)
+                group.State = CommanderGroupState.Idle;
+        }
+
+        /// <summary>
+        /// Executes a confirmed special-skill attack plan (远攻). Validates the skill
+        /// sequence so a stale plan can never fire after a newer command. Area units
+        /// (AreaRadius&gt;0) fire at the ground cell; single-target units attack the enemy
+        /// standing on the cell. Members get per-unit attacks and never create a group
+        /// AttackPlan, so the group command sequence stays intact.
+        /// </summary>
+        public bool CommandSkillAttack(CommanderGroupRuntime group, SkillAttackPlan plan)
+        {
+            if (BattleSimulationState.IsFrozen) return false;
+            if (group == null || plan == null || group.IsDefeated) return false;
+            if (group.Skills.SkillSequence != plan.SkillSequence) return false;
+
+            var combat = UnitCombatController.Instance;
+            if (combat == null) return false;
+            var selection = UnitSelectionController.Instance;
+            UnitView enemyOnCell = !plan.IsAreaAttack && selection != null
+                ? selection.FindAtCell(plan.TargetCell) : null;
+
+            bool any = false;
+            for (int i = 0; i < plan.MemberIds.Count; i++)
+            {
+                UnitView member = FindMember(group, plan.MemberIds[i]);
+                if (member == null || member.Data == null || member.Data.State == UnitState.Dead)
+                    continue;
+                if (plan.IsAreaAttack)
+                {
+                    if (member.Data.Definition != null &&
+                        member.Data.Definition.AreaRadius > 0f &&
+                        combat.FireAtCell(member, plan.TargetCell)) any = true;
+                    continue;
+                }
+                if (enemyOnCell != null && enemyOnCell.Data != null &&
+                    enemyOnCell.Data.Team != member.Data.Team &&
+                    enemyOnCell.Data.State != UnitState.Dead &&
+                    combat.CommandSkillAttack(member, enemyOnCell)) any = true;
+            }
+            if (!any) return false;
+
+            group.CurrentCommand.Sequence++;
+            group.CurrentCommand.Type = GroupCommandType.SkillAttack;
+            group.CurrentCommand.TargetCell = plan.TargetCell;
+            group.CurrentCommand.TargetGroupId = plan.TargetGroupId;
+            return true;
+        }
+
+        static UnitView FindMember(CommanderGroupRuntime group, string unitId)
+        {
+            if (group == null || string.IsNullOrEmpty(unitId)) return null;
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member != null && member.Data != null && member.Data.Id == unitId)
+                    return member;
+            }
+            return null;
+        }
+
         /// <summary>Explicitly rebuilds slot assignments; this is the only combat action that may fill gaps.</summary>
         public bool CommandRegroup(CommanderGroupRuntime group, FormationType formation)
         {
@@ -149,7 +298,9 @@ namespace Mvp.Battle.Commanders
             var grid = BattleGridController.Instance;
             if (group == null || grid == null || group.IsDefeated) return false;
 
+            InterruptPersistentModes(group);
             _attackPlans.Remove(group.GroupId);
+            group.CaptureBuildingId = null;
             CollectAlive(group, _members);
             if (_members.Count == 0) return false;
             ComputeSlots(formation, _members.Count, group.AnchorCell, _slots);
@@ -161,7 +312,7 @@ namespace Mvp.Battle.Commanders
                 return false;
             }
 
-            if (!DispatchMoves(_members, _slots, grid))
+            if (!DispatchMoves(group, _members, _slots, grid, group.Facing))
             {
                 RollbackReservation(group);
                 return false;
@@ -188,7 +339,9 @@ namespace Mvp.Battle.Commanders
             if (group == null || assignments == null || grid == null || group.IsDefeated ||
                 group.State != CommanderGroupState.Idle) return false;
 
+            InterruptPersistentModes(group);
             _attackPlans.Remove(group.GroupId);
+            group.CaptureBuildingId = null;
             CollectAlive(group, _members);
             _slots.Clear();
             var usedSlots = new HashSet<int>();
@@ -209,7 +362,7 @@ namespace Mvp.Battle.Commanders
                 return false;
             }
 
-            if (!DispatchMoves(_members, _slots, grid))
+            if (!DispatchMoves(group, _members, _slots, grid, group.Facing))
             {
                 RollbackReservation(group);
                 return false;
@@ -238,14 +391,31 @@ namespace Mvp.Battle.Commanders
             return CommandAttack(group, clickedTarget, true);
         }
 
+        /// <summary>Orders the complete formation to attack an independent tactical target.</summary>
+        public bool CommandAttackTacticalTarget(CommanderGroupRuntime group, UnitView target,
+            string tacticalId)
+        {
+            if (string.IsNullOrEmpty(tacticalId)) return false;
+            if (!CommandAttack(group, target, true)) return false;
+            group.CurrentCommand.Type = GroupCommandType.AttackTacticalTarget;
+            group.CurrentCommand.TargetGroupId = null;
+            group.CurrentCommand.TargetTacticalId = tacticalId;
+            return true;
+        }
+
         public bool CommandAttack(CommanderGroupRuntime group, UnitView clickedTarget,
             bool moveIntoRange)
         {
             if (BattleSimulationState.IsFrozen) return false;
             var registry = CommanderGroupRegistry.Instance;
-            if (group == null || clickedTarget == null || group.IsDefeated) return false;
+            if (group == null || clickedTarget == null || clickedTarget.Data == null ||
+                group.IsDefeated) return false;
 
+            InterruptPersistentModes(group);
+            SprintEffectService.NotifyAttack(group, Time.time);
             var targetGroup = registry != null ? registry.Find(clickedTarget) : null;
+            group.CaptureBuildingId = null;
+            ApplyFacing(group, clickedTarget.Data.GridPosition - group.AnchorCell);
             EnsureLockedLayout(group);
             Vector2Int attackAnchor = group.AnchorCell;
             bool started = true;
@@ -258,6 +428,7 @@ namespace Mvp.Battle.Commanders
                     return false;
                 }
 
+                ApplyFacing(group, clickedTarget.Data.GridPosition - attackAnchor);
                 if (!IssueLockedMove(group, attackAnchor)) return false;
                 started = false;
             }
@@ -265,6 +436,7 @@ namespace Mvp.Battle.Commanders
             group.State = CommanderGroupState.Attacking;
             group.CurrentCommand.Type = GroupCommandType.AttackGroup;
             group.CurrentCommand.TargetGroupId = targetGroup != null ? targetGroup.GroupId : null;
+            group.CurrentCommand.TargetTacticalId = null;
             group.CurrentCommand.Sequence++;
             _attackPlans[group.GroupId] = new AttackPlan
             {
@@ -277,9 +449,111 @@ namespace Mvp.Battle.Commanders
             if (started)
             {
                 ReleaseReservation(group);
+                FaceGroupImmediately(group);
                 BeginStationaryAttack(group, targetGroup, clickedTarget);
             }
             return true;
+        }
+
+        static void FaceGroupImmediately(CommanderGroupRuntime group)
+        {
+            if (group == null || group.Facing == Vector2Int.zero) return;
+            Vector3 direction = FormationFacing.WorldDirection(group.Facing);
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member == null || member.Data == null ||
+                    member.Data.State == UnitState.Dead) continue;
+                member.SetFacingDirection(direction);
+            }
+        }
+        /// <summary>
+        /// Issues a capture command: up to 4 capture-capable members move to free
+        /// cells on the building's adjacent ring.
+        /// </summary>
+        public bool CommandCaptureBuilding(CommanderGroupRuntime group, BuildingRuntime building)
+        {
+            if (BattleSimulationState.IsFrozen) return false;
+            var grid = BattleGridController.Instance;
+            var movement = UnitMovementController.Instance;
+            if (group == null || building == null || grid == null || movement == null ||
+                group.IsDefeated) return false;
+
+            InterruptPersistentModes(group);
+            _attackPlans.Remove(group.GroupId);
+            group.CaptureBuildingId = null;
+            ApplyFacing(group, building.AnchorCell - group.AnchorCell);
+
+            CollectAlive(group, _members);
+            if (_members.Count == 0) return false;
+
+            var capturers = new List<UnitView>();
+            for (int i = 0; i < _members.Count && capturers.Count < 4; i++)
+            {
+                var member = _members[i];
+                if (member == null || member.Data == null || member.Data.Definition == null) continue;
+                if ((member.Data.Definition.Tags & UnitTag.CanCaptureBuilding) == 0) continue;
+                capturers.Add(member);
+            }
+            if (capturers.Count == 0) return false;
+
+            var ring = new List<Vector2Int>();
+            BuildingCaptureController.BuildAdjacentRing(building, ring);
+            var reservations = FormationReservationService.Instance;
+            _slots.Clear();
+            for (int i = 0; i < ring.Count; i++)
+            {
+                var cell = ring[i];
+                if (!grid.InBounds(cell) || !grid.IsWalkable(cell)) continue;
+                if (grid.IsOccupied(cell)) continue;
+                if (reservations != null &&
+                    reservations.IsReservedByOther(group.GroupId, cell)) continue;
+                _slots.Add(cell);
+            }
+            if (_slots.Count == 0) return false;
+
+            _members.Clear();
+            for (int i = 0; i < capturers.Count && i < _slots.Count; i++)
+                _members.Add(capturers[i]);
+            if (_slots.Count > _members.Count)
+                _slots.RemoveRange(_members.Count, _slots.Count - _members.Count);
+            if (_members.Count == 0) return false;
+
+            if (!PrepareReservation(group, _slots) ||
+                !ValidateSlots(group, grid, _slots) || !CanReachAll(_members, _slots, grid))
+            {
+                RollbackReservation(group);
+                FlashGroup(_members);
+                return false;
+            }
+            if (!DispatchMoves(group, _members, _slots, grid, group.Facing))
+            {
+                RollbackReservation(group);
+                return false;
+            }
+            CommitReservation(group);
+
+            group.State = CommanderGroupState.Capturing;
+            group.CaptureBuildingId = building.InstanceId.ToString();
+            group.CurrentCommand.Type = GroupCommandType.CaptureBuilding;
+            group.CurrentCommand.TargetCell = building.AnchorCell;
+            group.CurrentCommand.TargetGroupId = null;
+            group.CurrentCommand.Sequence++;
+            return true;
+        }
+
+        /// <summary>True when the group has at least one alive capture-capable member (§5.2).</summary>
+        public static bool HasCaptureCapableMember(CommanderGroupRuntime group)
+        {
+            if (group == null) return false;
+            for (int i = 0; i < group.Members.Count; i++)
+            {
+                var member = group.Members[i];
+                if (member == null || member.Data == null || member.Data.State == UnitState.Dead) continue;
+                if (member.Data.Definition == null) continue;
+                if ((member.Data.Definition.Tags & UnitTag.CanCaptureBuilding) != 0) return true;
+            }
+            return false;
         }
 
         public void CancelGroupCommand(CommanderGroupRuntime group)
@@ -288,6 +562,7 @@ namespace Mvp.Battle.Commanders
             group.CurrentCommand.Sequence++;
             group.CurrentCommand.Type = GroupCommandType.None;
             group.CurrentCommand.TargetGroupId = null;
+            group.CaptureBuildingId = null;
             _attackPlans.Remove(group.GroupId);
 
             var movement = UnitMovementController.Instance;
@@ -311,14 +586,26 @@ namespace Mvp.Battle.Commanders
             if (grid == null || movement == null) return false;
             CollectAlive(group, _members);
             BuildLockedTargets(group, targetAnchor, _members, _slots);
-            if (!PrepareReservation(group, _slots)) return false;
-            if (!ValidateSlots(group, grid, _slots) || !CanReachAll(_members, _slots, grid))
+            if (!PrepareReservation(group, _slots))
             {
+                LastMoveFailureReason = "区域不足";
+                return false;
+            }
+            if (!ValidateSlots(group, grid, _slots))
+            {
+                LastMoveFailureReason = "阵型受阻";
                 RollbackReservation(group);
                 return false;
             }
-            if (!DispatchMoves(_members, _slots, grid))
+            if (!CanReachAll(_members, _slots, grid))
             {
+                LastMoveFailureReason = "目标不可达";
+                RollbackReservation(group);
+                return false;
+            }
+            if (!DispatchMoves(group, _members, _slots, grid, group.Facing))
+            {
+                LastMoveFailureReason = "目标不可达";
                 RollbackReservation(group);
                 return false;
             }
@@ -332,33 +619,45 @@ namespace Mvp.Battle.Commanders
         {
             var movement = UnitMovementController.Instance;
             if (movement == null || movement.Pathfinder == null) return false;
+            _validatedPathCount = 0;
+            for (int i = 0; i < _validatedPaths.Count; i++) _validatedPaths[i].Clear();
             ClearGroupOccupancy(members, grid, false);
             bool reachable = true;
             for (int i = 0; i < members.Count; i++)
             {
-                if (members[i].Data.GridPosition == targets[i]) continue;
+                if (_validatedPaths.Count <= i)
+                    _validatedPaths.Add(new List<Vector2Int>(32));
+                var path = _validatedPaths[i];
+                _validatedPathCount++;
+                if (members[i].Data.GridPosition == targets[i])
+                {
+                    path.Add(members[i].Data.GridPosition);
+                    continue;
+                }
                 if (!movement.Pathfinder.FindPath(members[i].Data.GridPosition,
                     targets[i], _pathBuffer, false))
                 {
                     reachable = false;
                     break;
                 }
+                path.AddRange(_pathBuffer);
             }
             ClearGroupOccupancy(members, grid, true);
             return reachable;
         }
 
-        static bool DispatchMoves(List<UnitView> members, List<Vector2Int> targets,
-            BattleGridController grid)
+        bool DispatchMoves(CommanderGroupRuntime group, List<UnitView> members,
+            List<Vector2Int> targets, BattleGridController grid, Vector2Int facing)
         {
             var movement = UnitMovementController.Instance;
             if (movement == null) return false;
             ClearGroupOccupancy(members, grid, false);
-            float groupSpeed = ComputeGroupMoveSpeed(members);
+            float groupSpeed = ComputeGroupMoveSpeed(group, members);
             int accepted = 0;
             for (int i = 0; i < members.Count; i++)
             {
-                if (movement.CommandMove(members[i], targets[i], groupSpeed)) accepted++;
+                if (i < _validatedPathCount && movement.CommandMoveWithPath(
+                    members[i], targets[i], groupSpeed, facing, _validatedPaths[i])) accepted++;
                 else break;
             }
             if (accepted != members.Count)
@@ -404,6 +703,7 @@ namespace Mvp.Battle.Commanders
             group.CurrentCommand.Sequence++;
             group.CurrentCommand.Type = GroupCommandType.None;
             group.CurrentCommand.TargetGroupId = null;
+            group.CaptureBuildingId = null;
             var movement = UnitMovementController.Instance;
             var combat = UnitCombatController.Instance;
             for (int i = 0; i < group.Members.Count; i++)
@@ -415,6 +715,79 @@ namespace Mvp.Battle.Commanders
             }
             ReleaseReservation(group);
             if (!group.IsDefeated) group.State = CommanderGroupState.Idle;
+        }
+
+        void RefreshCapturingGroup(CommanderGroupRuntime group)
+        {
+            BuildingRuntime building = null;
+            if (!string.IsNullOrEmpty(group.CaptureBuildingId))
+            {
+                var registry = BuildingRegistry.Instance;
+                if (registry != null)
+                {
+                    int id;
+                    if (int.TryParse(group.CaptureBuildingId, out id))
+                        building = registry.GetByInstanceId(id);
+                }
+            }
+
+            if (building == null)
+            {
+                // Building vanished (battle reset / map swap): abandon the capture.
+                group.CaptureBuildingId = null;
+                ReleaseReservation(group);
+                group.State = CommanderGroupState.Idle;
+                group.CurrentCommand.Type = GroupCommandType.None;
+                group.CurrentCommand.Sequence++;
+                return;
+            }
+
+            // Ownership flipped to our team → capture complete; return to formation.
+            bool ownedByTeam = building.Owner ==
+                (group.Team == TeamId.Player ? BuildingOwner.Player : BuildingOwner.Enemy);
+            if (ownedByTeam)
+            {
+                EndCaptureAndRegroup(group);
+                return;
+            }
+
+            // No alive capture-capable member left → abandon.
+            if (!HasCaptureCapableMember(group))
+            {
+                group.CaptureBuildingId = null;
+                ReleaseReservation(group);
+                group.State = CommanderGroupState.Idle;
+                group.CurrentCommand.Type = GroupCommandType.None;
+                group.CurrentCommand.Sequence++;
+            }
+            // Otherwise keep capturing; units remain on the adjacent ring while
+            // BuildingCaptureController accumulates progress.
+        }
+
+        /// <summary>
+        /// Capture finished for our team: release the ring reservation and re-issue a move
+        /// back to the formation anchor (reuses the existing Regrouping → Idle path).
+        /// </summary>
+        void EndCaptureAndRegroup(CommanderGroupRuntime group)
+        {
+            group.CaptureBuildingId = null;
+            group.CurrentCommand.Type = GroupCommandType.None;
+            ReleaseReservation(group);
+            EnsureLockedLayout(group);
+            if (IssueLockedMove(group, group.AnchorCell))
+            {
+                group.State = CommanderGroupState.Regrouping;
+                group.CurrentCommand.Type = GroupCommandType.Regroup;
+                group.CurrentCommand.TargetCell = group.AnchorCell;
+                group.CurrentCommand.TargetGroupId = null;
+                group.CurrentCommand.Sequence++;
+            }
+            else
+            {
+                group.State = CommanderGroupState.Idle;
+                group.CurrentCommand.Type = GroupCommandType.None;
+                group.CurrentCommand.Sequence++;
+            }
         }
 
         bool FindCombatAnchor(CommanderGroupRuntime group,
@@ -469,7 +842,7 @@ namespace Mvp.Battle.Commanders
                     member.Data.State == UnitState.Dead ||
                     member.Data.Definition == null) continue;
                 range = Mathf.Max(range,
-                    Mathf.RoundToInt(member.Data.Definition.AttackRange));
+                    Mathf.RoundToInt(member.Data.Definition.AttackRangeMax));
             }
             return range;
         }
@@ -483,7 +856,7 @@ namespace Mvp.Battle.Commanders
                 if (member == null || member.Data == null ||
                     member.Data.State == UnitState.Dead ||
                     member.Data.Definition == null) continue;
-                int range = Mathf.RoundToInt(member.Data.Definition.AttackRange);
+                int range = Mathf.RoundToInt(member.Data.Definition.AttackRangeMax);
                 int dx = Mathf.Abs(slots[i].x - targetCell.x);
                 int dz = Mathf.Abs(slots[i].y - targetCell.y);
                 if (Mathf.Max(dx, dz) <= range) return true;
@@ -512,20 +885,20 @@ namespace Mvp.Battle.Commanders
             for (int i = 0; i < members.Count; i++)
             {
                 Vector2Int target;
-                if (!group.Layout.TryGetTarget(members[i], anchor, out target))
+                if (!group.Layout.TryGetTarget(members[i], group.Facing, anchor, out target))
                     target = anchor;
                 targets.Add(target);
             }
         }
 
-        static bool AtLockedSlots(CommanderGroupRuntime group, Vector2Int anchor)
+        public static bool AtLockedSlots(CommanderGroupRuntime group, Vector2Int anchor)
         {
             for (int i = 0; i < group.Members.Count; i++)
             {
                 var member = group.Members[i];
                 if (member == null || member.Data == null || member.Data.State == UnitState.Dead) continue;
                 Vector2Int target;
-                if (!group.Layout.TryGetTarget(member, anchor, out target)) continue;
+                if (!group.Layout.TryGetTarget(member, group.Facing, anchor, out target)) continue;
                 if (member.Data.GridPosition != target || member.Data.State == UnitState.Moving) return false;
             }
             return true;
@@ -635,7 +1008,7 @@ namespace Mvp.Battle.Commanders
             return best;
         }
 
-        static float ComputeGroupMoveSpeed(List<UnitView> members)
+        static float ComputeGroupMoveSpeed(CommanderGroupRuntime group, List<UnitView> members)
         {
             float speed = float.MaxValue;
             for (int i = 0; i < members.Count; i++)
@@ -643,7 +1016,8 @@ namespace Mvp.Battle.Commanders
                 var member = members[i];
                 if (member == null || member.Data == null || member.Data.Definition == null) continue;
                 float memberSpeed = member.Data.Definition.MoveSpeed *
-                    Mvp.Battle.Traits.TraitEffectService.GetMoveSpeedMultiplier(member.Data);
+                    Mvp.Battle.Traits.TraitEffectService.GetMoveSpeedMultiplier(member.Data) *
+                    SprintEffectService.GetMoveSpeedMultiplier(group, member.Data, Time.time);
                 if (memberSpeed < speed) speed = memberSpeed;
             }
             return speed == float.MaxValue ? 0f : Mathf.Max(0.01f, speed);

@@ -1,7 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Mvp.Battle.Units;
+using Mvp.Battle.Skills;
 using Mvp.Shared;
+using Mvp.Shared.Skills;
 using Mvp.Battle.Formation;
 
 namespace Mvp.Battle.Commanders
@@ -12,7 +14,12 @@ namespace Mvp.Battle.Commanders
         Moving,
         Attacking,
         Regrouping,
-        Defeated
+        Capturing,
+        Defeated,
+        Extracted,
+        /// <summary>Defensive/guard mode: units hold their formation slots and only fire
+        /// at enemies that enter range; they never chase (战斗技能系统开发文档 §5).</summary>
+        Holding
     }
 
     public enum GroupCommandType
@@ -22,7 +29,10 @@ namespace Mvp.Battle.Commanders
         AttackGroup,
         Hold,
         Regroup,
-        FormationDeploy
+        FormationDeploy,
+        CaptureBuilding,
+        SkillAttack,
+        AttackTacticalTarget
     }
 
     public sealed class GroupCommand
@@ -30,6 +40,7 @@ namespace Mvp.Battle.Commanders
         public GroupCommandType Type;
         public Vector2Int TargetCell;
         public string TargetGroupId;
+        public string TargetTacticalId;
         public int Sequence;
     }
 
@@ -45,9 +56,20 @@ namespace Mvp.Battle.Commanders
         public Vector2Int AnchorCell;
         public FormationType Formation;
         public CommanderGroupState State;
+
+        /// <summary>8-direction formation facing, from the most recent command's click direction; defaults to +Z.</summary>
+        public Vector2Int Facing = FormationFacing.Default;
+
+        /// <summary>Instance id of the building the group is capturing; null/empty when none (阶段B).</summary>
+        public string CaptureBuildingId;
+
         public readonly GroupCommand CurrentCommand = new GroupCommand();
         public readonly FormationLayoutSnapshot Layout = new FormationLayoutSnapshot();
+        /// <summary>Skill runtime: persistent tactical mode, targeting state and per-unit
+        /// skill cooldowns (战斗技能系统开发文档 §4.2).</summary>
+        public readonly GroupSkillRuntime Skills = new GroupSkillRuntime();
         public bool DefeatNotified;
+        public int ExtractedMemberCount;
 
         public int AliveMemberCount
         {
@@ -69,9 +91,12 @@ namespace Mvp.Battle.Commanders
         {
             get
             {
-                return AliveMemberCount == 0;
+                return State == CommanderGroupState.Defeated ||
+                    (AliveMemberCount == 0 && State != CommanderGroupState.Extracted);
             }
         }
+
+        public bool IsExtracted { get { return State == CommanderGroupState.Extracted; } }
 
         public Vector3 CurrentWorldCenter
         {
@@ -89,6 +114,24 @@ namespace Mvp.Battle.Commanders
                 return count > 0 ? sum / count : Vector3.zero;
             }
         }
+    }
+
+    /// <summary>
+    /// Group-level skill attack plan created when a special skill (远攻) is confirmed.
+    /// Carries a SkillSequence so delayed/async attack results can be validated against
+    /// the group's current skill state before applying (战斗技能系统开发文档 §4.2).
+    /// </summary>
+    public sealed class SkillAttackPlan
+    {
+        public string SkillId;
+        public long SkillSequence;
+        public GroupCommandType CommandType = GroupCommandType.SkillAttack;
+        public Vector2Int TargetCell;
+        public string TargetGroupId;
+        /// <summary>Unit ids that participate in this skill attack (already range-checked).</summary>
+        public readonly List<string> MemberIds = new List<string>();
+        /// <summary>True when this is a ground/area attack (unit AreaRadius &gt; 0).</summary>
+        public bool IsAreaAttack;
     }
 
     /// <summary>Stable unit-to-slot bindings created during deployment.</summary>
@@ -120,7 +163,7 @@ namespace Mvp.Battle.Commanders
             Locked = locked;
         }
 
-        public bool TryGetTarget(UnitView member, Vector2Int targetAnchor,
+        public bool TryGetTarget(UnitView member, Vector2Int facing, Vector2Int targetAnchor,
             out Vector2Int target)
         {
             target = targetAnchor;
@@ -129,7 +172,7 @@ namespace Mvp.Battle.Commanders
             Vector2Int offset;
             if (!UnitSlotAssignments.TryGetValue(member.Data.Id, out slot)) return false;
             if (!SlotOffsets.TryGetValue(slot, out offset)) return false;
-            target = targetAnchor + offset;
+            target = targetAnchor + FormationFacing.RotateOffset(offset, facing);
             return true;
         }
     }

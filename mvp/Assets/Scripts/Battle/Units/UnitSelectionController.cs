@@ -2,8 +2,11 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using Mvp.Battle.Map;
+using Mvp.Battle.Buildings;
+using Mvp.Battle.Skills;
 using Mvp.Shared;
 using Mvp.Battle.Commanders;
+using Mvp.Battle.UI;
 
 namespace Mvp.Battle.Units
 {
@@ -23,6 +26,8 @@ namespace Mvp.Battle.Units
         public static UnitSelectionController Instance { get; private set; }
 
         public UnitView Selected { get; private set; }
+        public Vector3 LastMapAimPoint { get; private set; }
+        public bool HasMapAimPoint { get; private set; }
 
         readonly Dictionary<Vector2Int, UnitView> _byCell =
             new Dictionary<Vector2Int, UnitView>();
@@ -30,6 +35,7 @@ namespace Mvp.Battle.Units
         readonly List<PoolableUi> _attackRangeCells = new List<PoolableUi>();
 
         PoolableUi _selectionRing;
+        bool _attackRangeHiddenForMovement;
 
         void Awake()
         {
@@ -48,10 +54,27 @@ namespace Mvp.Battle.Units
             ReleaseAttackRange();
         }
 
+        void Start()
+        {
+            var grid = BattleGridController.Instance;
+            if (grid == null) return;
+            LastMapAimPoint = new Vector3(
+                (grid.Width - 1) * 0.5f,
+                0f,
+                (grid.Height - 1) * 0.5f);
+            HasMapAimPoint = true;
+        }
+
         void Update()
         {
+            RefreshAttackRangeVisibility();
+
             if (Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.Escape))
             {
+                // Targeting intercepts right-click / Esc to cancel the skill cast.
+                var skillTargeting = SkillTargetingController.Instance;
+                if (skillTargeting != null && skillTargeting.IsTargeting)
+                    skillTargeting.CancelTargeting();
                 var formation = Mvp.Battle.Formation.FormationController.Instance;
                 if (formation != null && formation.IsCombatEditing)
                 {
@@ -69,6 +92,17 @@ namespace Mvp.Battle.Units
 
             if (!Input.GetMouseButtonDown(0)) return;
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
+
+            RecordMapAimPoint(Input.mousePosition);
+
+            // Skill targeting sits after right-click/Esc but before any normal selection:
+            // while a target is being chosen, left-click goes to the skill and is consumed.
+            var targeting = SkillTargetingController.Instance;
+            if (targeting != null && targeting.IsTargeting)
+            {
+                targeting.TryHandleLeftClick(Input.mousePosition);
+                return;
+            }
 
             var groups = CommanderGroupRegistry.Instance;
             if (groups != null && groups.TryPickMarker(Input.mousePosition))
@@ -92,8 +126,29 @@ namespace Mvp.Battle.Units
 
             if (grid.RayToGrid(cam.ScreenPointToRay(Input.mousePosition), out var cell))
             {
+                // Building footprint cells are blocked/occupied, so no unit can stand on
+                // them — check the building registry before the generic click handler (阶段B).
+                var building = BuildingRegistry.Instance != null
+                    ? BuildingRegistry.Instance.GetAt(cell) : null;
+                if (building != null)
+                {
+                    HandleBuildingClick(building);
+                    return;
+                }
                 HandleClick(cell);
             }
+        }
+
+        void RecordMapAimPoint(Vector2 screenPosition)
+        {
+            var cam = Camera.main;
+            var grid = BattleGridController.Instance;
+            if (cam == null || grid == null) return;
+            Vector2Int cell;
+            if (!grid.RayToGrid(cam.ScreenPointToRay(screenPosition), out cell)) return;
+            LastMapAimPoint = grid.GetCellCenterWorld(cell);
+            LastMapAimPoint += Vector3.up * TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            HasMapAimPoint = true;
         }
 
         // ---- registry ------------------------------------------------------------
@@ -161,9 +216,16 @@ namespace Mvp.Battle.Units
             }
 
             if (deploying || combatEditing) return;
-            var group = CommanderGroupRegistry.Instance != null
-                ? CommanderGroupRegistry.Instance.ActiveGroup : null;
+            var registry = CommanderGroupRegistry.Instance;
+            var group = registry != null ? registry.ActiveGroup : null;
             if (group == null)
+            {
+                ClearSelection();
+                return;
+            }
+            // 隐蔽编队不可被选中/锁定：敌人看不到隐蔽单位，玩家也无法锁定隐藏目标。
+            var targetGroup = registry.Find(unit);
+            if (targetGroup != null && ConcealmentService.IsConcealed(targetGroup))
             {
                 ClearSelection();
                 return;
@@ -205,12 +267,20 @@ namespace Mvp.Battle.Units
                 }
                 else
                 {
-                    var group = CommanderGroupRegistry.Instance != null
-                        ? CommanderGroupRegistry.Instance.ActiveGroup : null;
+                    var registry = CommanderGroupRegistry.Instance;
+                    var group = registry != null ? registry.ActiveGroup : null;
                     if (group != null)
                     {
-                        var commands = CommanderGroupCommandController.Instance;
-                        if (commands != null) commands.CommandAttack(group, unit);
+                        var targetGroup = registry.Find(unit);
+                        if (targetGroup != null && ConcealmentService.IsConcealed(targetGroup))
+                        {
+                            ClearSelection();
+                        }
+                        else
+                        {
+                            var commands = CommanderGroupCommandController.Instance;
+                            if (commands != null) commands.CommandAttack(group, unit);
+                        }
                     }
                     else
                     {
@@ -237,12 +307,57 @@ namespace Mvp.Battle.Units
             if (activeGroup != null)
             {
                 var commands = CommanderGroupCommandController.Instance;
-                if (commands != null) commands.CommandMove(activeGroup, cell);
+                string failureReason;
+                if (commands != null && !commands.CommandMove(activeGroup, cell, out failureReason))
+                {
+                    var status = Mvp.Battle.BattleUiStatusText.Instance;
+                    if (status != null) status.SetStatus(failureReason ?? "目标不可达");
+                }
             }
             else
             {
                 ClearSelection();
             }
+        }
+
+        /// <summary>Routes a left-click on a building to a capture command (§阶段B).</summary>
+        void HandleBuildingClick(BuildingRuntime building)
+        {
+            if (building == null) return;
+            var formation = Mvp.Battle.Formation.FormationController.Instance;
+            bool deploying = formation != null && formation.IsDeploying;
+            bool combatEditing = formation != null && formation.IsCombatEditing;
+            if (deploying || combatEditing) return;
+
+            var groups = CommanderGroupRegistry.Instance;
+            var group = groups != null ? groups.ActiveGroup : null;
+            if (group == null || group.IsDefeated) return;
+
+            var status = BattleUiStatusText.Instance;
+
+            // Already owned by our team: armories open production UI, other buildings just report status.
+            bool ownedByTeam = building.Owner ==
+                (group.Team == TeamId.Player ? BuildingOwner.Player : BuildingOwner.Enemy);
+            if (ownedByTeam)
+            {
+                if (building.Type == BuildingType.Armory && group.Team == TeamId.Player)
+                {
+                    ArmoryProductionPanel.Show(building);
+                    if (status != null) status.SetStatus("打开兵工厂");
+                }
+                else if (status != null) status.SetStatus("该建筑已被占领");
+                return;
+            }
+
+            // Only step units (infantry / machine gunner / scout) can capture (§5.2).
+            if (!CommanderGroupCommandController.HasCaptureCapableMember(group))
+            {
+                if (status != null) status.SetStatus("需要步系单位（步兵/机枪/侦察）才能占领建筑");
+                return;
+            }
+
+            var commands = CommanderGroupCommandController.Instance;
+            if (commands != null) commands.CommandCaptureBuilding(group, building);
         }
 
         public bool Select(UnitView unit)
@@ -260,7 +375,8 @@ namespace Mvp.Battle.Units
             if (!editingSameGroup && !registry.Inspect(group)) return false;
             Selected = unit;
             ShowRing(unit);
-            ShowAttackRange(unit);
+            _attackRangeHiddenForMovement = IsSelectedUnitMoving(unit);
+            if (!_attackRangeHiddenForMovement) ShowAttackRange(unit);
             return true;
         }
 
@@ -268,6 +384,7 @@ namespace Mvp.Battle.Units
         {
             if (Selected == null && _selectionRing == null && _attackRangeCells.Count == 0) return;
             Selected = null;
+            _attackRangeHiddenForMovement = false;
             ReleaseRing();
             ReleaseAttackRange();
         }
@@ -333,7 +450,7 @@ namespace Mvp.Battle.Units
             var pool = UiPool.Instance;
             if (grid == null || pool == null) return;
 
-            int range = Mathf.Max(0, Mathf.RoundToInt(unit.Data.Definition.AttackRange));
+            int range = Mathf.Max(0, Mathf.RoundToInt(unit.Data.Definition.AttackRangeMax));
             var origin = unit.Data.GridPosition;
             for (int dz = -range; dz <= range; dz++)
             {
@@ -352,6 +469,36 @@ namespace Mvp.Battle.Units
                     _attackRangeCells.Add(ui);
                 }
             }
+        }
+
+        void RefreshAttackRangeVisibility()
+        {
+            if (Selected == null || Selected.Data == null) return;
+            bool moving = IsSelectedUnitMoving(Selected);
+            if (moving)
+            {
+                if (_attackRangeCells.Count > 0) ReleaseAttackRange();
+                _attackRangeHiddenForMovement = true;
+                return;
+            }
+            if (!_attackRangeHiddenForMovement) return;
+            _attackRangeHiddenForMovement = false;
+            ShowAttackRange(Selected);
+        }
+
+        static bool IsSelectedUnitMoving(UnitView unit)
+        {
+            if (unit == null || unit.Data == null) return false;
+            if (unit.Data.State == UnitState.Moving ||
+                unit.Data.State == UnitState.Chasing ||
+                unit.Data.State == UnitState.Capturing)
+                return true;
+            var registry = CommanderGroupRegistry.Instance;
+            var group = registry != null ? registry.Find(unit) : null;
+            return group != null &&
+                (group.State == CommanderGroupState.Moving ||
+                 group.State == CommanderGroupState.Regrouping ||
+                 group.State == CommanderGroupState.Capturing);
         }
 
         void ReleaseAttackRange()

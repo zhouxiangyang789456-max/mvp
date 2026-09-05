@@ -8,6 +8,7 @@ namespace Mvp.Shared
         Chasing,
         Attacking,
         Deploying,
+        Capturing,
         Dead
     }
 }

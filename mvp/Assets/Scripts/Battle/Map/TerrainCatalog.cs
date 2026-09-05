@@ -33,6 +33,8 @@ namespace Mvp.Battle.Map
                 case TerrainType.Desert: return new Color(0.85f, 0.74f, 0.48f);
                 case TerrainType.ShallowWater: return new Color(0.42f, 0.68f, 0.83f);
                 case TerrainType.Ocean: return new Color(0.16f, 0.32f, 0.55f);
+                case TerrainType.Road: return new Color(0.20f, 0.22f, 0.25f);
+                case TerrainType.Bridge: return new Color(0.48f, 0.38f, 0.25f);
                 default: return Color.magenta;
             }
         }
@@ -61,6 +63,8 @@ namespace Mvp.Battle.Map
                 case TerrainType.Desert: return "沙漠";
                 case TerrainType.ShallowWater: return "浅水";
                 case TerrainType.Ocean: return "海洋";
+                case TerrainType.Road: return "道路";
+                case TerrainType.Bridge: return "桥梁";
                 default: return t.ToString();
             }
         }
