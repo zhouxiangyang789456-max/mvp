@@ -17,11 +17,20 @@ namespace Mvp.Battle
     public static class BattleCore
     {
         static GameObject _root;
+        static bool _isShuttingDown;
+
+        /// <summary>True when the battle scene is tearing down. Use to guard lazy-init
+        /// singletons (UiPool / EffectPool / Instance getters) so a stray OnDestroy
+        /// release does not spawn hundreds of new GameObjects while Unity is closing
+        /// the scene.</summary>
+        public static bool IsShuttingDown { get { return _isShuttingDown; } }
 
         public static void Ensure()
         {
             // Unity overloaded null-check returns true for destroyed objects.
             if (_root != null) return;
+            if (_isShuttingDown) return;
+            if (!Application.isPlaying) return;
 
             var go = new GameObject("BattleCore");
             go.AddComponent<BattleTickService>();
@@ -56,6 +65,7 @@ namespace Mvp.Battle
 
         public static void Teardown()
         {
+            _isShuttingDown = true;
             TacticalDecoyService.Shutdown();
             TauntEffectService.Shutdown();
             if (_root != null)
@@ -67,6 +77,7 @@ namespace Mvp.Battle
 
         public static void DestroyImmediateNow()
         {
+            _isShuttingDown = true;
             TacticalDecoyService.Shutdown();
             TauntEffectService.Shutdown();
             if (_root != null)

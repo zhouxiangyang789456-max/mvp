@@ -95,11 +95,19 @@ namespace Mvp.Battle
                     int n = ny * _w + nx;
                     if (_closedGeneration[n] == generation) continue;
                     if (n == s) continue;
+                    var currentCell = new Vector2Int(cx, cy);
+                    var nextCell = new Vector2Int(nx, ny);
+                    if (!_grid.CanTraverse(currentCell, nextCell)) continue;
                     if (n != e)
                     {
-                        if (!_grid.IsWalkable(new Vector2Int(nx, ny))) continue;
-                        if (_grid.IsOccupied(new Vector2Int(nx, ny))) continue;
+                        if (!_grid.IsWalkable(nextCell)) continue;
+                        if (_grid.IsOccupied(nextCell)) continue;
                     }
+
+                    // Do not cut diagonally through the corners of cliffs/obstacles.
+                    if (Dir8[i].x != 0 && Dir8[i].y != 0 &&
+                        (!_grid.CanTraverse(currentCell, new Vector2Int(nx, cy)) ||
+                         !_grid.CanTraverse(currentCell, new Vector2Int(cx, ny)))) continue;
 
                     int ng = _gScore[cur] + DirCost[i];
                     if (_visitedGeneration[n] != generation || ng < _gScore[n])

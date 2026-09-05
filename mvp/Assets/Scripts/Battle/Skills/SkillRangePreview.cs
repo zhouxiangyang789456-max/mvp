@@ -195,7 +195,7 @@ namespace Mvp.Battle.Skills
             var grid = BattleGridController.Instance;
             if (grid == null) return new Vector3(cell.x, 0.03f, cell.y);
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell)) + 0.03f;
+            p.y = grid.GetSurfaceHeight(cell) + 0.03f;
             return p;
         }
     }

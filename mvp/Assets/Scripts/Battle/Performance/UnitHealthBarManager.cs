@@ -13,7 +13,10 @@ namespace Mvp.Battle
         {
             get
             {
-                if (_instance == null) BattleCore.Ensure();
+                if (_instance != null) return _instance;
+                if (BattleCore.IsShuttingDown) return null;
+                if (!Application.isPlaying) return null;
+                BattleCore.Ensure();
                 return _instance;
             }
         }
@@ -63,6 +66,15 @@ namespace Mvp.Battle
 
         public void ReleaseAll()
         {
+            // Do not lazily re-create the pool during scene teardown; the OnDestroy
+            // chains of UnitSelectionController / FormationController / SkillRangePreview
+            // can fire after BattleCore has been destroyed, and accessing
+            // UiPool.Instance would otherwise spawn ~200 fresh UI GameObjects.
+            if (BattleCore.IsShuttingDown || !Application.isPlaying)
+            {
+                _active.Clear();
+                return;
+            }
             for (int i = 0; i < _active.Count; i++)
             {
                 UiPool.Instance.Release(_active[i].Ui);

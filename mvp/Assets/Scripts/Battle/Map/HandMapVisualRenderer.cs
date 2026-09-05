@@ -18,10 +18,15 @@ namespace Mvp.Battle.Map
                 if (tile.X < 0 || tile.Y < 0 || tile.X >= map.Width || tile.Y >= map.Height) continue;
                 var instance = Object.Instantiate(tile.Prefab, root, false);
                 instance.name = "HandTile_" + tile.X + "_" + tile.Y + "_Z" + tile.Z;
-                instance.transform.localPosition = new Vector3(tile.X,
-                    tile.Z * map.LayerHeightScale + tile.HeightOffset, tile.Y);
+                // Keep runtime placement identical to HandMapBuilder preview:
+                // grid Y maps to world Z, so OffsetY must be applied on world/local Z.
+                instance.transform.localPosition = new Vector3(
+                    tile.X + tile.OffsetX,
+                    tile.Z * map.LayerHeightScale + tile.HeightOffset,
+                    tile.Y + tile.OffsetY);
                 instance.transform.localRotation = Quaternion.Euler(0f, tile.RotationY, 0f);
-                TerrainGeometryHelper.PrepareHandAuthored(instance, map.DefaultPrefabScale);
+                TerrainGeometryHelper.PrepareHandAuthored(instance, map.DefaultPrefabScale,
+                    tile.Category);
                 rendered++;
             }
             Debug.Log("[HandMapVisualRenderer] rendered=" + rendered + " source=" + map.name);

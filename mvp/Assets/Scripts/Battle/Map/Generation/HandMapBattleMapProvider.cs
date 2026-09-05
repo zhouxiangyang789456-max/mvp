@@ -21,6 +21,9 @@ namespace Mvp.Battle.Map.Generation
                 if (tile.X < 0 || tile.Y < 0 || tile.X >= width || tile.Y >= height) continue;
                 if (tile.Category == HandTileCategory.Building)
                     blockedCells.Add(new Vector2Int(tile.X, tile.Y));
+                if (tile.Category == HandTileCategory.Mountain ||
+                    tile.Category == HandTileCategory.Decoration)
+                    blockedCells.Add(new Vector2Int(tile.X, tile.Y));
                 if (tile.Z != 0) continue;
                 var terrain = Resolve(tile.Category);
                 int candidatePriority = Priority(tile.Category);
@@ -58,10 +61,28 @@ namespace Mvp.Battle.Map.Generation
             {
                 case HandTileCategory.Path: return TerrainType.Road;
                 case HandTileCategory.Forest: return TerrainType.Forest;
-                case HandTileCategory.Water: return TerrainType.ShallowWater;
+                // HandMap 水一律按深水 Ocean 走：陆军单位无法在河里行军（程序化关卡仍走
+                // ShallowWater=可走的浅滩语义；只在玩家手作的地图里把水视为不可通行的河流）。
+                case HandTileCategory.Water: return TerrainType.Ocean;
                 case HandTileCategory.Bridge: return TerrainType.Bridge;
                 case HandTileCategory.Mountain: return TerrainType.Mountain;
                 default: return TerrainType.Plain;
+            }
+        }
+
+        public static bool ProvidesWalkableSurface(HandTileCategory category)
+        {
+            switch (category)
+            {
+                case HandTileCategory.Base:
+                case HandTileCategory.Path:
+                case HandTileCategory.Forest: // 树干按设计允许穿行
+                case HandTileCategory.Plant:
+                case HandTileCategory.Ramp:
+                case HandTileCategory.Bridge:
+                    return true;
+                default:
+                    return false;
             }
         }
 

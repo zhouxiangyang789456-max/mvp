@@ -329,7 +329,7 @@ namespace Mvp.Battle.Units
             var view = go.AddComponent<UnitView>();
 
             var world = grid.GridToWorld(cell);
-            world.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            world.y = grid.GetSurfaceHeight(cell);
             view.Spawn(data, world);
             view.AttachHealthBar();
 

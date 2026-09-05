@@ -54,6 +54,13 @@ namespace Mvp.Battle.Map.Generation
         /// 避免石块陷进地面或塔身悬空。和全局 LayerHeightScale 叠加生效。
         /// </summary>
         public float HeightOffset;
+        /// <summary>
+        /// 阶段5新增：单 tile 的水平微调偏移（X/Y 各 [-1, +1]）。
+        /// 让用户能让某个 tile 偏离格子中心——例如让楼梯斜跨两格、栅栏伸到邻格、避开 Z-fighting 等。
+        /// <para/>默认 0,旧 .asset 没这个字段时反序列化为 0。
+        /// </summary>
+        public float OffsetX;
+        public float OffsetY;
         public HandTileCategory Category;
     }
 

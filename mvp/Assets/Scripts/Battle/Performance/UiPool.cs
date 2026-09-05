@@ -14,7 +14,14 @@ namespace Mvp.Battle
         {
             get
             {
-                if (_instance == null) BattleCore.Ensure();
+                // Lazy-init must not run while the battle scene is shutting down or
+                // when the application is leaving play mode; doing so spawns hundreds
+                // of pooled UI objects (Ui_/Fx_) that Unity immediately flags as
+                // "objects spawned during scene close".
+                if (_instance != null) return _instance;
+                if (BattleCore.IsShuttingDown) return null;
+                if (!Application.isPlaying) return null;
+                BattleCore.Ensure();
                 return _instance;
             }
         }
@@ -43,6 +50,7 @@ namespace Mvp.Battle
 
         public PoolableUi Get(UiPoolType type, Vector3 position, Quaternion rotation, Vector3 scale)
         {
+            if (this == null) return null; // destroyed but not yet nulled for callers
             if (!_pools.TryGetValue(type, out var pool))
             {
                 Debug.LogWarning("[UiPool] No factory registered for " + type);
@@ -60,6 +68,7 @@ namespace Mvp.Battle
         public void Release(PoolableUi ui)
         {
             if (ui == null) return;
+            if (this == null) { ui.Despawn(); return; }
             if (_pools.TryGetValue(ui.Type, out var pool))
             {
                 ui.Despawn();

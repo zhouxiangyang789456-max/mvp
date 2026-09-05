@@ -12,5 +12,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7aa12e5f3a674711a7f6bccf061a844b, type: 3}
   m_Name: HandMapRuntimeConfig
   m_EditorClassIdentifier: 
-  ActiveMap: {fileID: 11400000, guid: f0cf24a0faa236c4aa231b7cf1f44502, type: 2}
+  ActiveMap: {fileID: 11400000, guid: 2e7402f8ce7443642a24b9ae191859a5, type: 2}
   ActiveProfile: {fileID: 11400000, guid: 52c35e5bad5b0c44da2e9db8add9c4d8, type: 2}

@@ -164,7 +164,7 @@ namespace Mvp.Battle.Units
         static Vector3 GridWorldCenter(BattleGridController grid, Vector2Int cell)
         {
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            p.y = grid.GetSurfaceHeight(cell);
             return p;
         }
 
@@ -396,6 +396,7 @@ namespace Mvp.Battle.Units
         {
             var grid = BattleGridController.Instance;
             if (grid == null || unit == null || unit.Data == null) return false;
+            if (grid.IsBlocked(cell) || !grid.CanTraverse(unit.Data.GridPosition, cell)) return false;
             if (!grid.IsOccupied(cell)) return true;
 
             var selection = UnitSelectionController.Instance;
@@ -474,7 +475,7 @@ namespace Mvp.Battle.Units
                 if (sel != null) sel.UpdateCell(unit, old, cell);
             }
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            p.y = grid.GetSurfaceHeight(cell);
             unit.transform.position = p;
         }
 
@@ -483,7 +484,7 @@ namespace Mvp.Battle.Units
             var grid = BattleGridController.Instance;
             if (grid == null) return new Vector3(cell.x, 0f, cell.y);
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            p.y = grid.GetSurfaceHeight(cell);
             return p;
         }
 

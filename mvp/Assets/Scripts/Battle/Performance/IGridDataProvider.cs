@@ -13,5 +13,6 @@ namespace Mvp.Battle
         bool InBounds(Vector2Int cell);
         bool IsWalkable(Vector2Int cell);
         bool IsOccupied(Vector2Int cell);
+        bool CanTraverse(Vector2Int from, Vector2Int to);
     }
 }

@@ -48,6 +48,8 @@ namespace Mvp.Battle.Map
         [SerializeField] TerrainPrefabCatalog _terrainPrefabCatalog;
 
         TerrainType[,] _terrain;
+        float[,] _surfaceHeights;
+        bool[,] _rampCells;
         readonly HashSet<Vector2Int> _occupied = new HashSet<Vector2Int>();
         // Buildings mark their footprint cells blocked + occupied so pathfinding,
         // movement, spawning and slot validation automatically avoid them (阶段B).
@@ -113,7 +115,9 @@ namespace Mvp.Battle.Map
                     BattleMapContext.LastHandMapData = handMap;
                     _width = Mathf.Max(1, handMap.Width);
                     _height = Mathf.Max(1, handMap.Height);
-                    return HandMapBattleMapProvider.CreateBattleMap(handMap, _blocked);
+                    var terrain = HandMapBattleMapProvider.CreateBattleMap(handMap, _blocked);
+                    BuildHandMapSurfaceData(handMap);
+                    return terrain;
                 }
                 Debug.LogError("[BattleGridController] HandAuthored selected without a HandMap; falling back to Procedural.");
             }
@@ -227,7 +231,10 @@ namespace Mvp.Battle.Map
             }
 
             if (BattleMapContext.LastHandMapData != null)
+            {
+                WarnBridgeOverNonWater(BattleMapContext.LastHandMapData);
                 HandMapVisualRenderer.Render(BattleMapContext.LastHandMapData, rootGo.transform);
+            }
             else
             {
                 var decorationSpawner = gameObject.GetComponent<TerrainDecorationSpawner>();
@@ -313,6 +320,56 @@ namespace Mvp.Battle.Map
                 !_blocked.Contains(c);
         }
 
+        public float GetSurfaceHeight(Vector2Int c)
+        {
+            if (!InBounds(c)) return 0f;
+            if (_surfaceHeights != null) return _surfaceHeights[c.y, c.x];
+            return TerrainCatalog.GetElevation(_terrain[c.y, c.x]);
+        }
+
+        public bool CanTraverse(Vector2Int from, Vector2Int to)
+        {
+            if (!InBounds(from) || !InBounds(to) || !IsWalkable(to)) return false;
+            float difference = Mathf.Abs(GetSurfaceHeight(to) - GetSurfaceHeight(from));
+            if (difference <= 0.26f) return true;
+            bool ramp = _rampCells != null &&
+                (_rampCells[from.y, from.x] || _rampCells[to.y, to.x]);
+            if (!ramp || difference > 2.05f) return false;
+            Vector2Int step = to - from;
+            return RampConnects(from, step) || RampConnects(to, step);
+        }
+
+        bool RampConnects(Vector2Int cell, Vector2Int step)
+        {
+            if (_rampCells == null || !_rampCells[cell.y, cell.x]) return false;
+            // Imported ramp prefabs do not share one native forward axis, so yaw alone
+            // cannot reliably tell which grid axis their stairs use. Treat a ramp cell
+            // as a four-way cardinal height connector; diagonal height changes remain
+            // forbidden, which still prevents corner-cutting across cliffs.
+            return Mathf.Abs(step.x) + Mathf.Abs(step.y) == 1;
+        }
+
+        void BuildHandMapSurfaceData(HandAuthoredMapData map)
+        {
+            _surfaceHeights = new float[_height, _width];
+            _rampCells = new bool[_height, _width];
+            if (map == null || map.Tiles == null) return;
+
+            for (int i = 0; i < map.Tiles.Count; i++)
+            {
+                var tile = map.Tiles[i];
+                if (tile.X < 0 || tile.Y < 0 || tile.X >= _width || tile.Y >= _height) continue;
+                if (tile.Category == HandTileCategory.Ramp)
+                {
+                    _rampCells[tile.Y, tile.X] = true;
+                }
+                if (!HandMapBattleMapProvider.ProvidesWalkableSurface(tile.Category)) continue;
+                float height = tile.Z * map.LayerHeightScale + tile.HeightOffset;
+                if (height > _surfaceHeights[tile.Y, tile.X])
+                    _surfaceHeights[tile.Y, tile.X] = height;
+            }
+        }
+
         public bool IsOccupied(Vector2Int c)
         {
             return _occupied.Contains(c);
@@ -359,6 +416,41 @@ namespace Mvp.Battle.Map
         {
             _occupied.Clear();
             _blocked.Clear();
+        }
+
+        /// <summary>
+        /// 扫描 HandMap 找出"桥架在非 Water 之上"的情况。语义上桥必须跨在水面或山地上,
+        /// 否则视觉与走位不一致。请到 HandMapBuilder 里把桥下方的格子改成 Water(或删除这座桥)。
+        /// 只 Console 警告,不强制改数据——避免运行期偷偷改用户的 .asset。
+        /// </summary>
+        static void WarnBridgeOverNonWater(HandAuthoredMapData map)
+        {
+            if (map == null || map.Tiles == null) return;
+            int bad = 0;
+            var report = new System.Text.StringBuilder();
+            for (int i = 0; i < map.Tiles.Count; i++)
+            {
+                var tile = map.Tiles[i];
+                if (tile.Category != HandTileCategory.Bridge) continue;
+                if (tile.Z < 1) continue; // Z=0 桥不警告(用户意图明确)
+                bool groundIsWater = false;
+                for (int j = 0; j < map.Tiles.Count; j++)
+                {
+                    var t = map.Tiles[j];
+                    if (t.X == tile.X && t.Y == tile.Y && t.Z == 0 &&
+                        t.Category == HandTileCategory.Water) { groundIsWater = true; break; }
+                }
+                if (!groundIsWater)
+                {
+                    bad++;
+                    if (report.Length < 256)
+                        report.Append("(").Append(tile.X).Append(",").Append(tile.Y).Append(") ");
+                }
+            }
+            if (bad > 0)
+                Debug.LogWarning("[BattleGridController] " + map.name + " 包含 " + bad +
+                    " 座 Z>=1 的桥跨在非 Water 之上。桥下应改为 Water tile,否则视觉与走位语义不一致。" +
+                    (report.Length > 0 ? "首例: " + report.ToString() : ""));
         }
     }
 }

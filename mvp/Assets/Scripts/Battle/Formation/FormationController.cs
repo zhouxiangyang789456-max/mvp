@@ -717,7 +717,7 @@ namespace Mvp.Battle.Formation
             if (spatial != null) spatial.Move(unit, old, cell);
 
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            p.y = grid.GetSurfaceHeight(cell);
             unit.transform.position = p;
             data.State = UnitState.Idle;
             data.CurrentCommand.Type = UnitCommandType.None;
@@ -796,7 +796,7 @@ namespace Mvp.Battle.Formation
             var grid = BattleGridController.Instance;
             if (grid == null) return new Vector3(cell.x, 0.02f, cell.y);
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell)) + 0.02f;
+            p.y = grid.GetSurfaceHeight(cell) + 0.02f;
             return p;
         }
     }

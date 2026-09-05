@@ -279,7 +279,7 @@ namespace Mvp.Battle.Units
             var grid = BattleGridController.Instance;
             if (grid == null || unit == null || unit.Data == null) return false;
             // Building footprint cells are blocked: never enter them (阶段B).
-            if (grid.IsBlocked(cell)) return false;
+            if (grid.IsBlocked(cell) || !grid.CanTraverse(unit.Data.GridPosition, cell)) return false;
             if (!grid.IsOccupied(cell)) return true;
 
             var selection = UnitSelectionController.Instance;
@@ -309,7 +309,7 @@ namespace Mvp.Battle.Units
             }
 
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            p.y = grid.GetSurfaceHeight(cell);
             unit.transform.position = p;
         }
 
@@ -319,7 +319,7 @@ namespace Mvp.Battle.Units
             var grid = BattleGridController.Instance;
             if (grid == null) return new Vector3(cell.x, 0f, cell.y);
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            p.y = grid.GetSurfaceHeight(cell);
             return p;
         }
         /// <summary>Keeps a unit above both tile surfaces while crossing their border.</summary>
@@ -327,8 +327,8 @@ namespace Mvp.Battle.Units
         {
             var grid = BattleGridController.Instance;
             if (grid == null) return 0f;
-            float from = TerrainCatalog.GetElevation(grid.GetTerrain(fromCell));
-            float to = TerrainCatalog.GetElevation(grid.GetTerrain(toCell));
+            float from = grid.GetSurfaceHeight(fromCell);
+            float to = grid.GetSurfaceHeight(toCell);
             return Mathf.Max(from, to);
         }
 

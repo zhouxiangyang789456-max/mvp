@@ -20,7 +20,7 @@ namespace Mvp.Battle.Outcome
             var go = new GameObject("ExtractionPortal");
             go.transform.SetParent(parent, false);
             var center = grid.GridToWorld(anchor) + new Vector3(w * 0.5f, 0f, h * 0.5f);
-            center.y = TerrainCatalog.GetElevation(grid.GetTerrain(anchor));
+            center.y = grid.GetSurfaceHeight(anchor);
             go.transform.position = center;
             var zone = go.AddComponent<PortalExtractionZone>();
             zone.Anchor = anchor;

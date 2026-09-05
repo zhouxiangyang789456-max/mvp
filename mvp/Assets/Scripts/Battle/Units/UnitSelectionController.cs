@@ -147,7 +147,7 @@ namespace Mvp.Battle.Units
             Vector2Int cell;
             if (!grid.RayToGrid(cam.ScreenPointToRay(screenPosition), out cell)) return;
             LastMapAimPoint = grid.GetCellCenterWorld(cell);
-            LastMapAimPoint += Vector3.up * TerrainCatalog.GetElevation(grid.GetTerrain(cell));
+            LastMapAimPoint += Vector3.up * grid.GetSurfaceHeight(cell);
             HasMapAimPoint = true;
         }
 
@@ -515,7 +515,7 @@ namespace Mvp.Battle.Units
             var grid = BattleGridController.Instance;
             if (grid == null) return new Vector3(cell.x, 0.025f, cell.y);
             var p = grid.GridToWorld(cell);
-            p.y = TerrainCatalog.GetElevation(grid.GetTerrain(cell)) + 0.025f;
+            p.y = grid.GetSurfaceHeight(cell) + 0.025f;
             return p;
         }
 

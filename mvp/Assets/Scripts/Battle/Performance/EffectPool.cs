@@ -14,7 +14,10 @@ namespace Mvp.Battle
         {
             get
             {
-                if (_instance == null) BattleCore.Ensure();
+                if (_instance != null) return _instance;
+                if (BattleCore.IsShuttingDown) return null;
+                if (!Application.isPlaying) return null;
+                BattleCore.Ensure();
                 return _instance;
             }
         }

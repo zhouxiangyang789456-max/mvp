@@ -53,10 +53,15 @@ namespace Mvp.Editor.HandMapBuilder
         // 阶段 5：框选 + 复制粘贴 状态机
         enum BuilderState
         {
-            Idle,            // 闲置（可画/可擦）
-            BoxSelecting,    // 用户正在拖拽框选（拖拽距离 ≥2 格）
-            BoxSelected,     // 用户已释放、框选被保留，可点"复制" / Delete
-            ReadyToCopy,     // 已点复制，鼠标 hover 时显示 ghost preview
+            // 模式 1:Idle        编辑器地形模式（默认）。鼠标左键单击/拖动 = 笔刷画/擦;Ctrl+左键拖 = 框选;Shift+左键 = 模式 2。右键 = 吸管。Esc 无操作。
+            // 模式 2:InspectingTile 选中已放置 tile。鼠标左键/拖动全部 noop(避免误画),Inspector 调整高度/旋转/偏移。Esc → Idle。右键吸管仍可用。
+            // 模式 3:ReadyToCopy 复制粘贴模式。鼠标左键单击 = 实贴;Space / Enter 也实贴。Esc → Idle(保留框选)。
+            // 注:user 原话"不能出现框选框" — 模式 1 左键拖绝不变框选;BoxSelecting/BoxSelected 仅在 Ctrl+左键拖时出现,作为 Idle 的子状态(拖框中的中间态)。
+            Idle,
+            BoxSelecting,    // Idle 子状态:Ctrl+左键拖框中(任何距离)
+            BoxSelected,     // Idle 子状态:Ctrl+左键拖完成,等待点"复制 (⏎)" / Enter / 删除 / Esc
+            InspectingTile,  // 模式 2:Shift+左键 选中已放置 tile。鼠标左键啥都不做。Esc → Idle。
+            ReadyToCopy,     // 模式 3:点"复制"或 Enter 后进入。鼠标左键单击 = 实贴。Esc → Idle。
         }
         BuilderState _state = BuilderState.Idle;
 
@@ -98,6 +103,9 @@ namespace Mvp.Editor.HandMapBuilder
         // 拖拽绘制去重：本帧（一次按下→松开）已画过的格子，避免重复 PlaceAt
         readonly HashSet<Vector2Int> _dragPaintedCells = new HashSet<Vector2Int>();
 
+        // Esc 后到下一次 MouseUp 期间，吞掉所有鼠标事件（防止"按住左键 Esc 后继续 MouseDrag 重新进 BoxSelecting"）
+        bool _suppressMouseUntilUp;
+
         // Scene 视图里的预览实例 — key 用 (X, Y, Z)
         readonly Dictionary<Vector3Int, GameObject> _spawnedByCell =
             new Dictionary<Vector3Int, GameObject>();
@@ -123,7 +131,10 @@ namespace Mvp.Editor.HandMapBuilder
             SceneView.duringSceneGui -= OnSceneGui;
             EditorApplication.update -= OnEditorUpdate;
             EditorApplication.delayCall -= RestoreSavedMapPreviews;
-            ClearSpawnedPreview();
+            // Domain reload / Undo can make _spawnedByCell lose entries while the
+            // preview GameObjects are still alive.  Closing the tool must remove
+            // every preview, not just the instances still present in the dictionary.
+            ClearAllPreviewObjects();
         }
 
         void RestoreSavedMapPreviews()
@@ -184,7 +195,7 @@ namespace Mvp.Editor.HandMapBuilder
             EditorGUILayout.LabelField("3D 等距地图建造工具", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "上方是 Unity Scene 视图（自带视角控制：Alt+左键转、滚轮缩放、F 聚焦）。\n" +
-                "左键单击 = 放 1 格；按住拖拽 = 笔刷形状连续画；右键 = 吸管（自动跳到该 prefab 所在层级）。\n" +
+                "左键单击/拖动 = 笔刷连续画；Ctrl+左键拖 = 框选；Shift+左键 = 模式2 Inspector；右键 = 吸管（自动跳到该 prefab 所在层级）。\n" +
                 "下方依次：类别标签 → 调色板 → 笔刷+填充 → 层级控制。",
                 MessageType.Info);
         }
@@ -327,11 +338,12 @@ namespace Mvp.Editor.HandMapBuilder
                 {
                     if (kv.Key.x >= newW || kv.Key.y >= newH)
                     {
-                        if (kv.Value != null) DestroyImmediate(kv.Value);
+                        if (kv.Value != null) Undo.DestroyObjectImmediate(kv.Value);
                         keysToRemove.Add(kv.Key);
                     }
                 }
                 foreach (var k in keysToRemove) _spawnedByCell.Remove(k);
+                CleanOrphanedPreviews(-1);
 
                 // 缩窄地图后，可能选中的 tile 也越界了，清掉避免下次绘制拿失效索引抛异常
                 _selectedTileIndices.Clear();
@@ -610,10 +622,20 @@ namespace Mvp.Editor.HandMapBuilder
             Color stateColor;
             switch (_state)
             {
-                case BuilderState.BoxSelecting: stateText = "拖拽框选中..."; stateColor = new Color(0.4f, 0.7f, 1f); break;
-                case BuilderState.BoxSelected:  stateText = $"已选 {selCount} 个 tile"; stateColor = new Color(0.5f, 0.9f, 0.5f); break;
-                case BuilderState.ReadyToCopy:  stateText = $"📋 待粘贴 {_clipboard.Count} 个 tile（按 Space 实贴 / Esc 退出）"; stateColor = new Color(1f, 0.85f, 0.3f); break;
-                default: stateText = "未框选（拖 ≥2 格启动框选）"; stateColor = new Color(0.7f, 0.7f, 0.7f); break;
+                // 模式 1 / 子状态
+                case BuilderState.BoxSelecting: stateText = "🟦 模式1·编辑器 — Ctrl+左键拖框选中..."; stateColor = new Color(0.4f, 0.7f, 1f); break;
+                case BuilderState.BoxSelected:  stateText = $"🟦 模式1·编辑器 — 已选 {selCount} 个 tile（点「复制 (⏎)」进入模式3,Esc 清选）"; stateColor = new Color(0.5f, 0.9f, 0.5f); break;
+                // 模式 2
+                case BuilderState.InspectingTile:
+                    stateText = _selectedTileForEdit.HasValue
+                        ? $"🟨 模式2·Inspector — 已选 tile ({_selectedTileForEdit.Value.X},{_selectedTileForEdit.Value.Y},Z={_selectedTileForEdit.Value.Z}) | 调整高度/旋转/平移 | Esc 退回模式1"
+                        : "🟨 模式2·Inspector — Esc 退回模式1";
+                    stateColor = new Color(1f, 0.95f, 0.3f);
+                    break;
+                // 模式 3
+                case BuilderState.ReadyToCopy:  stateText = $"🟩 模式3·复制粘贴 — 待粘贴 {_clipboard.Count} 个 tile（Space / 单击 实贴 | Esc 退出）"; stateColor = new Color(0.5f, 1f, 0.5f); break;
+                // Idle (默认 / 模式1)
+                default: stateText = "🟦 模式1·编辑器 — 左键拖=笔刷(画/擦),Ctrl+左键拖=框选,Shift+左键=模式2,右键=吸管"; stateColor = new Color(0.7f, 0.7f, 0.7f); break;
             }
             var prev = GUI.color;
             GUI.color = stateColor;
@@ -775,8 +797,6 @@ namespace Mvp.Editor.HandMapBuilder
                     {
                         _currentRotationY = snappedAngles[i];
                         _rotationSnapped = true;
-                        UpdateHoverGhost();
-                        Repaint();
                         _sv?.Repaint();
                     }
                 }
@@ -791,27 +811,31 @@ namespace Mvp.Editor.HandMapBuilder
             if (!Mathf.Approximately(newRot, _currentRotationY))
             {
                 _currentRotationY = newRot;
-                // 非 0/90/180/270 任意角 → 吸附失效，按钮全灭
+                // 非 0/90/180/270 任意角 → 吸附失效,按钮全灭
                 _rotationSnapped = Mathf.Approximately(newRot, 0f)
                                 || Mathf.Approximately(newRot, 90f)
                                 || Mathf.Approximately(newRot, 180f)
                                 || Mathf.Approximately(newRot, 270f);
-                UpdateHoverGhost();
+                _sv?.Repaint();
             }
             if (GUILayout.Button("+90°", GUILayout.Width(55))) { AdjustRotation(90f); }
             if (GUILayout.Button("-90°", GUILayout.Width(55))) { AdjustRotation(-90f); }
             GUILayout.Label(_rotationSnapped ? "吸附" : "自由角", EditorStyles.miniLabel);
             EditorGUILayout.EndHorizontal();
 
-            // —— 高度偏移 ——
+            // —— 高度偏移（这里控制"新放置 tile 的默认高度"，不是已放置的）——
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("高度:", GUILayout.Width(50));
+            EditorGUILayout.LabelField(
+                new GUIContent("高度:", "这个滑块 = 新放置 tile 的默认 HeightOffset。\n" +
+                                       "只影响接下来新放的地块；已放置的不动。\n" +
+                                       "想改已放置 tile 的高度？看下方『Inspector — 调整已放置 tile』区，Shift+左键先选中。"),
+                GUILayout.Width(50));
             float newH = EditorGUILayout.Slider(_currentHeightOffset, -2f, 2f);
             if (!Mathf.Approximately(newH, _currentHeightOffset))
             {
                 _currentHeightOffset = newH;
             }
-            if (GUILayout.Button("归零", GUILayout.Width(45))) { _currentHeightOffset = 0f; UpdateHoverGhost(); }
+            if (GUILayout.Button("归零", GUILayout.Width(45))) { _currentHeightOffset = 0f; _sv?.Repaint(); }
             GUILayout.Label($"当前 {_currentHeightOffset:F2}", EditorStyles.miniLabel, GUILayout.Width(60));
             EditorGUILayout.EndHorizontal();
 
@@ -843,14 +867,36 @@ namespace Mvp.Editor.HandMapBuilder
                             || Mathf.Approximately(_currentRotationY, 90f)
                             || Mathf.Approximately(_currentRotationY, 180f)
                             || Mathf.Approximately(_currentRotationY, 270f);
-            UpdateHoverGhost();
+            _sv?.Repaint();
         }
 
         // —— Tile Inspector（Shift+左键 选中后调整现有 tile 的 HeightOffset）——
         void DrawTileInspector()
         {
-            if (!_selectedTileForEdit.HasValue) return;
             if (_mapData == null) return;
+
+            // —— 未选中态：占位提示，告诉用户怎么进入选中 ——
+            if (!_selectedTileForEdit.HasValue)
+            {
+                EditorGUILayout.Space(4);
+                EditorGUILayout.LabelField("Inspector — 调整已放置 tile", EditorStyles.boldLabel);
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                var prev = GUI.color;
+                GUI.color = new Color(0.6f, 0.85f, 1f);  // 浅蓝提示色
+                EditorGUILayout.LabelField(
+                    "💡 想调整某一块已放置 tile 的高度/数据？",
+                    EditorStyles.boldLabel);
+                GUI.color = prev;
+                EditorGUILayout.LabelField(
+                    "  在 Scene 视图里按住 Shift，单击该 tile → 选中后这里会滑块化显示。",
+                    EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.LabelField(
+                    "  选中后：旋转 / 高度偏移 / 删除 全部在下方操作。",
+                    EditorStyles.wordWrappedMiniLabel);
+                EditorGUILayout.EndVertical();
+                return;
+            }
+
             var t = _selectedTileForEdit.Value;
             // 验证选中仍然有效（数据可能已被外部改动）
             int idx = -1;
@@ -884,12 +930,45 @@ namespace Mvp.Editor.HandMapBuilder
                 if (_spawnedByCell.TryGetValue(key, out var go) && go != null)
                 {
                     var w = GridToWorld(t.X + 0.5f, t.Y + 0.5f, t.Z);
-                    go.transform.position = new Vector3(w.x, w.y + t.HeightOffset, w.z);
+                    go.transform.position = new Vector3(w.x + t.OffsetX, w.y + t.HeightOffset, w.z + t.OffsetY);
                 }
             }
+
+            // —— 水平偏移(X / Y)：手动微调,默认 0 = 完全跟随自动 pivot 修正 ——
+            // 滑条范围 [-1, +1] 单位 = 整 1 格,允许用户让 tile 偏移最多 1 格。
+            EditorGUILayout.LabelField(
+                "水平偏移 (手动微调)",
+                EditorStyles.miniBoldLabel);
+            float newOX = EditorGUILayout.Slider(
+                new GUIContent("X:",
+                    "X 方向手动偏移。让 tile 在格子里挪动 X 方向最多 1 格。\n" +
+                    "0 = 默认居中;需要 tile 偏离格子中心时(例如伸进邻格或避开 Z-fighting)用。"),
+                t.OffsetX, -1f, 1f);
+            float newOY = EditorGUILayout.Slider(
+                new GUIContent("Y:",
+                    "Y 方向手动偏移(= 世界 Z 轴)。同上。"),
+                t.OffsetY, -1f, 1f);
+            if (!Mathf.Approximately(newOX, t.OffsetX) || !Mathf.Approximately(newOY, t.OffsetY))
+            {
+                Undo.RecordObject(_mapData, "调整 tile 水平偏移");
+                t.OffsetX = newOX;
+                t.OffsetY = newOY;
+                _mapData.Tiles[idx] = t;
+                EditorUtility.SetDirty(_mapData);
+                _selectedTileForEdit = t;
+                // 直接挪该格预览位置
+                var key2 = new Vector3Int(t.X, t.Y, t.Z);
+                if (_spawnedByCell.TryGetValue(key2, out var go2) && go2 != null)
+                {
+                    var w = GridToWorld(t.X + 0.5f, t.Y + 0.5f, t.Z);
+                    go2.transform.position = new Vector3(w.x + t.OffsetX, w.y + t.HeightOffset, w.z + t.OffsetY);
+                }
+            }
+
             if (GUILayout.Button("清除选中", GUILayout.Width(80)))
             {
                 _selectedTileForEdit = null;
+                _state = BuilderState.Idle;
                 _sv?.Repaint();
             }
             EditorGUILayout.EndVertical();
@@ -905,20 +984,22 @@ namespace Mvp.Editor.HandMapBuilder
                 if (go == null) continue;
                 var key = kv.Key;
                 float ho = 0f;
+                float offX = 0f, offY = 0f;
                 for (int i = 0; i < _mapData.Tiles.Count; i++)
                 {
                     var t = _mapData.Tiles[i];
-                    if (t.X == key.x && t.Y == key.y && t.Z == key.z) { ho = t.HeightOffset; break; }
+                    if (t.X == key.x && t.Y == key.y && t.Z == key.z)
+                    {
+                        ho = t.HeightOffset;
+                        offX = t.OffsetX;
+                        offY = t.OffsetY;
+                        break;
+                    }
                 }
                 var w = GridToWorld(key.x + 0.5f, key.y + 0.5f, key.z);
-                go.transform.position = new Vector3(w.x, w.y + ho, w.z);
+                // 同时保留用户的水平偏移,否则改 layerHeightScale 会清掉 OffsetX/Y
+                go.transform.position = new Vector3(w.x + offX, w.y + ho, w.z + offY);
             }
-        }
-
-        // 刷新 hover ghost 的旋转/高度
-        void UpdateHoverGhost()
-        {
-            _sv?.Repaint();
         }
 
         // 把 Scene 视图相机锚定到指定 Z 层（解决"加了层级看不到"问题）
@@ -973,11 +1054,32 @@ namespace Mvp.Editor.HandMapBuilder
                     Undo.RecordObject(_mapData, "清空地图");
                     _mapData.Tiles.Clear();
                     EditorUtility.SetDirty(_mapData);
-                    ClearSpawnedPreview();
+                    // 走 Undo 通道销毁所有 preview，再扫描兜底清孤儿
+                    foreach (var kv in _spawnedByCell)
+                        if (kv.Value != null) Undo.DestroyObjectImmediate(kv.Value);
+                    _spawnedByCell.Clear();
+                    CleanOrphanedPreviews(-1);
                     _maxZInData = 0;
                     _activeZ = 0;
                     _userReservedMaxZ = 0;
                     _sv?.Repaint();
+                }
+            }
+            // 强制清理孤儿 preview 按钮:不删数据,只清场景里那些"数据已删但实例还残留"的 HandMapTile_*。
+            // 是 user 报告"清空层级还有地形"那种顽固情况的兜底工具。
+            int orphanCount = _mapData != null ? CountOrphanedPreviews(-1) : 0;
+            var orphanLabel = orphanCount > 0
+                ? $"🧹 强制清理残留 ({orphanCount})"
+                : "🧹 强制清理残留";
+            using (new EditorGUI.DisabledScope(orphanCount == 0))
+            {
+                if (GUILayout.Button(new GUIContent(orphanLabel,
+                    "扫描场景里所有 HandMapTile_* GameObject,删除那些 _mapData.Tiles 里已经没有对应 cell 的孤儿。"),
+                    GUILayout.Width(160)))
+                {
+                    CleanOrphanedPreviews(-1);
+                    _sv?.Repaint();
+                    Debug.Log($"[HandMapBuilder] 强制清理完成: 清理了 {orphanCount} 个孤儿 preview");
                 }
             }
             EditorGUILayout.EndHorizontal();
@@ -1046,54 +1148,85 @@ namespace Mvp.Editor.HandMapBuilder
                     // H = 抬高当前 height offset 0.1，Shift+H = 下沉 0.1
                     _currentHeightOffset = Mathf.Clamp(
                         _currentHeightOffset + (e.shift ? -0.1f : 0.1f), -2f, 2f);
-                    UpdateHoverGhost();
+                    _sv?.Repaint();
                     Repaint();
                     e.Use();
                 }
-                // ---- 阶段 5: 框选 + 复制粘贴 快捷键 ----
-                else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
+                else
                 {
-                    // Enter = 按当前选区进入"待粘贴"状态（仅在有选区时生效）
-                    if (_state == BuilderState.BoxSelected && _selectedTileIndices.Count > 0)
-                    {
-                        EnterReadyToCopyState();
-                        e.Use();
-                    }
-                }
-                else if (e.keyCode == KeyCode.Space)
-                {
-                    // Space = 实贴（仅在 ReadyToCopy 状态下）
-                    if (_state == BuilderState.ReadyToCopy)
-                    {
-                        PasteAtCurrentHover();
-                        e.Use();
-                    }
-                }
-                else if (e.keyCode == KeyCode.Escape)
-                {
-                    // Esc = 退出待粘贴 / 清除选区
-                    if (_state == BuilderState.ReadyToCopy)
-                    {
-                        ExitCopyPasteState();
-                        e.Use();
-                    }
-                    else if (_state == BuilderState.BoxSelected || _state == BuilderState.BoxSelecting)
-                    {
-                        ClearSelection();
-                        e.Use();
-                    }
-                }
-                else if (e.keyCode == KeyCode.Delete || e.keyCode == KeyCode.Backspace)
-                {
-                    // Delete / Backspace = 删除选区
-                    if ((_state == BuilderState.BoxSelected || _state == BuilderState.ReadyToCopy)
-                        && _selectedTileIndices.Count > 0)
-                    {
-                        DeleteSelection();
-                        e.Use();
-                    }
+                    // 其他 4 键（Esc/Enter/Space/Delete）的状态切换逻辑抽到了 HandleShortcuts
+                    // —— OnGUI 焦点 和 SceneView 焦点 两个事件路径都共用同一份逻辑。
+                    if (HandleShortcuts(e)) Repaint();
                 }
             }
+        }
+
+        /// <summary>4 键共享快捷键逻辑（Esc/Enter/Space/Delete）。
+        /// 从 OnGUI 和 HandleSceneEvents 两个事件入口调用,确保 窗口焦点 / Scene 焦点 都能响应。
+        /// 返回 true 表示本函数已消费事件（外层可继续 Repaint）。</summary>
+        bool HandleShortcuts(Event e)
+        {
+            if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
+            {
+                // Enter = 按当前选区进入"待粘贴"状态（仅在有选区时生效）
+                if (_state == BuilderState.BoxSelected && _selectedTileIndices.Count > 0)
+                {
+                    EnterReadyToCopyState();
+                    e.Use();
+                    return true;
+                }
+            }
+            else if (e.keyCode == KeyCode.Space)
+            {
+                // Space = 实贴（仅在 ReadyToCopy 状态下）
+                if (_state == BuilderState.ReadyToCopy)
+                {
+                    PasteAtCurrentHover();
+                    e.Use();
+                    return true;
+                }
+            }
+            else if (e.keyCode == KeyCode.Escape)
+            {
+                // Esc = 退出待粘贴 / 清除选区 / 退出 Inspector 编辑模式
+                // 同时标记"到下一次 MouseUp 之前吞掉所有鼠标事件"——防止"按住左键 Esc 后继续 MouseDrag 重新进入 BoxSelecting"
+                if (_state == BuilderState.ReadyToCopy)
+                {
+                    ExitCopyPasteState();
+                    _suppressMouseUntilUp = true;
+                    e.Use();
+                    return true;
+                }
+                else if (_state == BuilderState.BoxSelected || _state == BuilderState.BoxSelecting)
+                {
+                    ClearSelection();
+                    _suppressMouseUntilUp = true;
+                    e.Use();
+                    return true;
+                }
+                else if (_state == BuilderState.InspectingTile)
+                {
+                    // 退出 Inspector 编辑模式 = 清除选中 tile，回到 Idle
+                    _selectedTileForEdit = null;
+                    _state = BuilderState.Idle;
+                    _suppressMouseUntilUp = true;
+                    _sv?.Repaint();
+                    e.Use();
+                    return true;
+                }
+            }
+            else if (e.keyCode == KeyCode.Delete || e.keyCode == KeyCode.Backspace)
+            {
+                // Delete / Backspace = 删除选区
+                if ((_state == BuilderState.BoxSelected || _state == BuilderState.ReadyToCopy)
+                    && _selectedTileIndices.Count > 0)
+                {
+                    DeleteSelection();
+                    e.Use();
+                    return true;
+                }
+            }
+            return false;
         }
 
         void DrawHelp()
@@ -1101,7 +1234,7 @@ namespace Mvp.Editor.HandMapBuilder
             EditorGUILayout.LabelField("提示", EditorStyles.helpBox);
             EditorGUILayout.HelpBox(
                 "• 上方预览 = Scene 视图，Unity 自带视角控制（Alt+左键转、滚轮缩放、F 聚焦）\n" +
-                "• 单击 = 放 1 格；拖拽 ≤1 格 = 笔刷形状连续画；拖拽 ≥2 格 = 框选（不画 tile）\n" +
+                "• 单击 / 拖拽左键 = 笔刷画(任何距离都画,不会变成框选);Ctrl+左键拖 = 框选(进入复制粘贴)\n" +
                 "• 右键 = 吸管（自动切到 prefab 层级 + 回写旋转/高度）\n" +
                 "• Shift+左键 = 选中该 tile → 下方面板显示 Inspector 可调高度偏移\n" +
                 "• 「填充整个层级」空格填，已有保留；「覆盖填充」强制替换；「清空当前层」按钮显示当前 Z 与 tile 数（删 0 个会提示）；「清空所有层级」一键清空\n" +
@@ -1122,8 +1255,14 @@ namespace Mvp.Editor.HandMapBuilder
             _sv = sv;
             if (_mapData == null) return;
 
+            // Claim ordinary SceneView input for the map editor. Without a default
+            // control Unity's built-in object selection wins the mouse-down, so the
+            // window often never receives Ctrl+left-drag or erase clicks. Alt-based
+            // camera navigation remains handled by SceneView.
+            if (Event.current.type == EventType.Layout && !Event.current.alt)
+                HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
+
             DrawGridHandles(sv);
-            DrawPlacedTiles(sv);
             DrawHoverGhost(sv);
             DrawBoxSelectionVisual(sv);   // 阶段 5: 框选矩形视觉
             DrawPasteGhostPreview(sv);    // 阶段 5: 待粘贴 ghost 预览
@@ -1348,12 +1487,6 @@ namespace Mvp.Editor.HandMapBuilder
             }
         }
 
-        void DrawPlacedTiles(SceneView sv)
-        {
-            // 笔刷预览由 DrawHoverGhost 绘制；本方法保留为空，后续可扩展
-            // （如显示同格多层栈的彩色边框等）
-        }
-
         void DrawHoverGhost(SceneView sv)
         {
             if (_hoverCell.x < 0) return;
@@ -1370,16 +1503,28 @@ namespace Mvp.Editor.HandMapBuilder
         }
 
         /// <summary>
-/// 处理 SceneView 事件。
-/// 注意：不调用 HandleUtility.AddDefaultControl() —— 那是导致 SceneView
-/// 鼠标右键 orbit/pan/zoom 失灵的元凶。改为只用 e.Use() 精确消费
-/// 我们关心的左键事件（画/擦/吸管选中），让 SceneView 其他相机操作正常。
-/// </summary>
+        /// 处理 SceneView 事件。三种模式:
+        ///   模式 1 (Idle 子状态):       鼠标左键单击/拖动 = 笔刷画/擦;Ctrl+左键拖 = 框选;Shift+左键 = 模式 2;右键 = 吸管
+        ///   模式 2 (InspectingTile):    鼠标左键/拖动全部 noop(避免误画/误框选);Inspector 调整高度/旋转/平移;右键吸管仍可用
+        ///   模式 3 (ReadyToCopy):      鼠标左键单击 = 实贴;Space / Enter 也实贴
+        /// Esc 三种模式都退出 → 回 Idle (模式 1)。
+        /// <para/>Layout 阶段注册默认控件以接收编辑鼠标事件；Alt 相机操作仍交给 SceneView。
+        /// </summary>
         void HandleSceneEvents(SceneView sv)
         {
             var e = Event.current;
 
-            // 鼠标移动 / 拖拽：更新 hover cell（不消费，让 SceneView 仍可相机操作）
+            // Keyboard shortcuts must run before the per-mode early returns below.
+            // Previously ReadyToCopy and InspectingTile returned first, which meant
+            // Esc could never exit those modes while the SceneView had focus.
+            if (e.type == EventType.KeyDown && !e.alt && HandleShortcuts(e))
+            {
+                Repaint();
+                sv.Repaint();
+                return;
+            }
+
+            // 鼠标移动 / 拖拽:更新 hover cell(不消费,SceneView 仍可相机操作)
             if (e.type == EventType.MouseMove || e.type == EventType.MouseDrag)
             {
                 Vector3 world = MouseToWorld(e.mousePosition, _activeZ);
@@ -1392,138 +1537,200 @@ namespace Mvp.Editor.HandMapBuilder
                 }
             }
 
-            // 待粘贴状态：单击 = 实贴
-            if (_state == BuilderState.ReadyToCopy && e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+            // ====== 模式 3:ReadyToCopy 实贴 ======
+            if (_state == BuilderState.ReadyToCopy)
             {
-                PasteAtCurrentHover();
-                e.Use();
-                sv.Repaint();
+                if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+                {
+                    PasteAtCurrentHover();
+                    e.Use();
+                    sv.Repaint();
+                }
+                // 模式 3 下右键仍走吸管逻辑(下方统一处理)
+                HandlePipetteClick(sv, e);
+                return; // 模式 3 完全屏蔽模式 1/2 的左键逻辑
+            }
+
+            // ====== 模式 2:InspectingTile 编辑选中 tile ======
+            // 左键/拖动/松开全部 noop,只更新 hover cell(已在开头做了)。
+            // Esc 在快捷键段退回 Idle。
+            if (_state == BuilderState.InspectingTile)
+            {
+                if (e.type == EventType.MouseDown && e.button == 1 && !e.alt)
+                {
+                    // 模式 2 下右键吸管继续可用,方便从地图上挑 prefab 切到画笔
+                    HandlePipetteClick(sv, e);
+                }
                 return;
             }
 
-            // 左键按下：开始绘制 / 选中（Shift 模式）
-            if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+            // ====== Esc 抑制窗口:到下一次 MouseUp 之前,吞掉所有鼠标 MouseDown/MouseDrag/MouseMove(右键除外) ======
+            // 防止"按住左键 Esc 后,后续 MouseDrag 重新进入 BoxSelecting/PlaceAt"。
+            // MouseMove 也要吞,否则 Repaint 会被它不停触发。
+            if (_suppressMouseUntilUp && (e.type == EventType.MouseMove
+                || e.type == EventType.MouseDrag
+                || (e.type == EventType.MouseDown && e.button == 0)))
             {
-                if (e.shift)
+                e.Use();
+                return;
+            }
+            if (_suppressMouseUntilUp && e.type == EventType.MouseUp && e.button == 0)
+            {
+                _suppressMouseUntilUp = false; // 用户松开了,恢复正常
+                e.Use();
+                return;
+            }
+
+            // ====== 模式 1:Idle 编辑器地形模式 ======
+        // 鼠标左键单击/拖动 = 笔刷画图(任何距离都画,不切换成框选)
+        // 鼠标右键单击 = 吸管
+        // Shift+左键 = 切模式 2 (InspectingTile)
+        // Ctrl+左键 拖动 = 框选(进入复制粘贴的唯一入口)
+        // 注:user 原话"不能出现框选框" — 模式 1 必须永远是左键=笔刷;框选只在 Ctrl 按下时出现。
+
+        // 左键按下
+        if (e.type == EventType.MouseDown && e.button == 0 && !e.alt)
+        {
+            if (e.shift)
+            {
+                // Shift+左键 = 进入模式 2 (InspectingTile)
+                PickTileAtHover();
+            }
+            else if (e.control || e.command)
+            {
+                // Ctrl/Cmd + 左键 = 启动框选(画/擦都不做)
+                if (_hoverCell.x < 0 || _hoverCell.y < 0
+                    || _hoverCell.x >= _mapData.Width || _hoverCell.y >= _mapData.Height)
                 {
-                    PickTileAtHover();
+                    // 地图外 → 当作相机操作
                 }
                 else
                 {
-                    // 启动可能的"画 tile"或"框选"双模式（拖拽距离决定）
-                    if (_hoverCell.x < 0 || _hoverCell.y < 0
-                        || _hoverCell.x >= _mapData.Width || _hoverCell.y >= _mapData.Height)
-                    {
-                        // 在地图外按的不算（保留相机控制）
-                    }
-                    else
-                    {
-                        _boxSelStart = _hoverCell;
-                        _boxSelEnd = _hoverCell;
-                        _dragPaintedCells.Clear();
-                        _state = BuilderState.Idle; // 暂未确定，进入 Idle 等拖拽距离判定
-                    }
-                }
-                e.Use();
-                sv.Repaint();
-            }
-
-            // 左键拖拽：检测距离 → 画 tile 或 框选
-            if (e.type == EventType.MouseDrag && e.button == 0 && !e.alt && !e.shift)
-            {
-                if (_boxSelStart.x >= 0 && _hoverCell.x >= 0)
-                {
-                    int dist = Mathf.Max(Mathf.Abs(_hoverCell.x - _boxSelStart.x),
-                                         Mathf.Abs(_hoverCell.y - _boxSelStart.y));
-                    if (dist >= 2)
-                    {
-                        // 大于等于 2 格 → 识别为框选，不再画 tile
-                        _state = BuilderState.BoxSelecting;
-                        _boxSelEnd = _hoverCell;
-                    }
-                }
-
-                if (_state == BuilderState.BoxSelecting)
-                {
-                    // 更新框选矩形
+                    _boxSelStart = _hoverCell;
                     _boxSelEnd = _hoverCell;
-                    RecomputeSelectedTileIndices();
-                    Repaint();
-                    sv.Repaint();
+                    _state = BuilderState.BoxSelecting;
                 }
-                else if (_boxSelStart.x >= 0)
-                {
-                    // 还不到 2 格 → 仍是画
-                    PaintAtHover();
-                    sv.Repaint();
-                }
-                e.Use();
             }
-
-            // 左键松开：保留框选 / 结束绘制
-            if (e.type == EventType.MouseUp && e.button == 0 && !e.alt)
+            else
             {
-                if (_state == BuilderState.BoxSelecting)
+                // 普通左键 = 画/擦 1 格
+                if (_hoverCell.x >= 0 && _hoverCell.y >= 0
+                    && _hoverCell.x < _mapData.Width && _hoverCell.y < _mapData.Height)
                 {
-                    _state = BuilderState.BoxSelected;
-                    _boxSelStart = new Vector2Int(-1, -1);
-                    _boxSelEnd = new Vector2Int(-1, -1);
-                }
-                else
-                {
+                    PaintAtHover();
+                    _dragPaintedCells.Add(_hoverCell);
                     _state = BuilderState.Idle;
-                    _dragPaintedCells.Clear();
-                    // 清掉起始点（避免下次按下误判）
-                    if (_boxSelStart == _boxSelEnd && _boxSelStart.x >= 0)
-                    {
-                        // 单击未被识别为框选，重置 start
-                    }
-                    _boxSelStart = new Vector2Int(-1, -1);
-                    _boxSelEnd = new Vector2Int(-1, -1);
                 }
-                e.Use();
+            }
+            e.Use();
+            sv.Repaint();
+        }
+
+        // 左键拖动
+        if (e.type == EventType.MouseDrag && e.button == 0 && !e.alt && !e.shift && !(e.control || e.command))
+        {
+            // 非 Shift/Ctrl 左键拖动 = 笔刷连续画图(任何距离都画)
+            if (_state == BuilderState.BoxSelecting)
+            {
+                // 极少见:鼠标按下时不是 Ctrl 但拖动起来变成 Ctrl(修饰键变化)
+                _boxSelEnd = _hoverCell;
+                RecomputeSelectedTileIndices();
                 Repaint();
                 sv.Repaint();
             }
-
-            // 右键单击：吸管（不消费右键 Drag，让 SceneView 仍可 orbit）
-            if (e.type == EventType.MouseDown && e.button == 1 && !e.alt)
+            else if (_hoverCell.x >= 0 && _hoverCell.y >= 0
+                     && _hoverCell.x < _mapData.Width && _hoverCell.y < _mapData.Height)
             {
-                if (_hoverCell.x < 0 || _hoverCell.y < 0) return;
-                if (_hoverCell.x >= _mapData.Width || _hoverCell.y >= _mapData.Height) return;
-
-                var tile = _mapData.FindTile(_hoverCell.x, _hoverCell.y, _activeZ);
-                if (tile == null)
-                {
-                    for (int z = 0; z <= _maxZInData; z++)
-                    {
-                        var t = _mapData.FindTile(_hoverCell.x, _hoverCell.y, z);
-                        if (t != null) { tile = t; break; }
-                    }
-                }
-                if (tile != null)
-                {
-                    var t = tile.Value;
-                    _activeZ = t.Z;
-                    _currentRotationY = t.RotationY;
-                    _rotationSnapped = Mathf.Approximately(t.RotationY, 0f)
-                                    || Mathf.Approximately(t.RotationY, 90f)
-                                    || Mathf.Approximately(t.RotationY, 180f)
-                                    || Mathf.Approximately(t.RotationY, 270f);
-                    _currentHeightOffset = t.HeightOffset;
-                    if (SelectByPath(t.PrefabPath))
-                    {
-                        _eraseMode = false;
-                        Repaint();
-                        sv.Repaint();
-                        Debug.Log($"[HandMapBuilder] 吸管: 切到第 {_activeZ + 1} 层, " +
-                                  $"rot={t.RotationY:F1}°, hOff={t.HeightOffset:F2}, " +
-                                  $"prefab = {Path.GetFileNameWithoutExtension(t.PrefabPath)}");
-                    }
-                }
-                e.Use();
+                PaintAtHover();
+                _dragPaintedCells.Add(_hoverCell);
                 sv.Repaint();
             }
+            e.Use();
+        }
+
+        // 左键 Ctrl 拖动 = 框选
+        if (e.type == EventType.MouseDrag && e.button == 0 && (e.control || e.command) && !e.alt && !e.shift)
+        {
+            if (_state == BuilderState.BoxSelecting)
+            {
+                _boxSelEnd = _hoverCell;
+                RecomputeSelectedTileIndices();
+                Repaint();
+                sv.Repaint();
+            }
+            else if (_hoverCell.x >= 0)
+            {
+                // 拖动过程中才按住 Ctrl — 启动框选
+                _boxSelStart = _hoverCell;
+                _boxSelEnd = _hoverCell;
+                _state = BuilderState.BoxSelecting;
+                Repaint();
+                sv.Repaint();
+            }
+            e.Use();
+        }
+
+        // 左键松开
+        if (e.type == EventType.MouseUp && e.button == 0 && !e.alt)
+        {
+            if (_state == BuilderState.BoxSelecting)
+            {
+                _state = BuilderState.BoxSelected;
+                _boxSelStart = new Vector2Int(-1, -1);
+                _boxSelEnd = new Vector2Int(-1, -1);
+            }
+            // 否则保持 Idle(刚画完)
+            _dragPaintedCells.Clear();
+            e.Use();
+            Repaint();
+            sv.Repaint();
+        }
+
+        // 右键 = 吸管(MouseDown 时触发;MouseDrag 时自然不会)
+        HandlePipetteClick(sv, e);
+
+    }
+
+        /// <summary>吸管:右键单击时,根据当前 _hoverCell 已有 tile 回写 palette/旋转/高度。
+        /// 模式 1/2/3 都可触发(由调用方控制)。</summary>
+        void HandlePipetteClick(SceneView sv, Event e)
+        {
+            if (e.type != EventType.MouseDown || e.button != 1 || e.alt) return;
+            if (_hoverCell.x < 0 || _hoverCell.y < 0) return;
+            if (_hoverCell.x >= _mapData.Width || _hoverCell.y >= _mapData.Height) return;
+            if (_mapData == null) return;
+
+            var tile = _mapData.FindTile(_hoverCell.x, _hoverCell.y, _activeZ);
+            if (tile == null)
+            {
+                for (int z = 0; z <= _maxZInData; z++)
+                {
+                    var t = _mapData.FindTile(_hoverCell.x, _hoverCell.y, z);
+                    if (t != null) { tile = t; break; }
+                }
+            }
+            if (tile != null)
+            {
+                var t = tile.Value;
+                _activeZ = t.Z;
+                _currentRotationY = t.RotationY;
+                _rotationSnapped = Mathf.Approximately(t.RotationY, 0f)
+                                || Mathf.Approximately(t.RotationY, 90f)
+                                || Mathf.Approximately(t.RotationY, 180f)
+                                || Mathf.Approximately(t.RotationY, 270f);
+                _currentHeightOffset = t.HeightOffset;
+                if (SelectByPath(t.PrefabPath))
+                {
+                    _eraseMode = false;
+                    Repaint();
+                    sv.Repaint();
+                    Debug.Log($"[HandMapBuilder] 吸管: 切到第 {_activeZ + 1} 层, " +
+                              $"rot={t.RotationY:F1}°, hOff={t.HeightOffset:F2}, " +
+                              $"prefab = {Path.GetFileNameWithoutExtension(t.PrefabPath)}");
+                }
+            }
+            e.Use();
+            sv.Repaint();
         }
 
         /// <summary>根据当前 _boxSelStart / _boxSelEnd 计算选中的 tile 索引（指向 _mapData.Tiles）。</summary>
@@ -1652,13 +1859,16 @@ namespace Mvp.Editor.HandMapBuilder
                       $"按 Space/Enter 实贴，Esc 取消");
         }
 
-        /// <summary>退出"待粘贴"状态。保留框选（用户可以再点复制）。</summary>
+        /// <summary>彻底退出复制粘贴和框选状态，回到普通绘制模式。</summary>
         void ExitCopyPasteState()
         {
             if (_state == BuilderState.ReadyToCopy)
             {
                 _clipboard.Clear();
-                _state = _selectedTileIndices.Count > 0 ? BuilderState.BoxSelected : BuilderState.Idle;
+                _selectedTileIndices.Clear();
+                _boxSelStart = new Vector2Int(-1, -1);
+                _boxSelEnd = new Vector2Int(-1, -1);
+                _state = BuilderState.Idle;
                 Repaint();
                 _sv?.Repaint();
             }
@@ -1684,12 +1894,15 @@ namespace Mvp.Editor.HandMapBuilder
                                          _mapData.Tiles[idx].Y,
                                          _mapData.Tiles[idx].Z);
                 if (_spawnedByCell.TryGetValue(key, out var go) && go != null)
-                    DestroyImmediate(go);
+                    Undo.DestroyObjectImmediate(go);
                 _spawnedByCell.Remove(key);
                 _mapData.Tiles.RemoveAt(idx);
             }
             EditorUtility.SetDirty(_mapData);
             Undo.CollapseUndoOperations(undoGroup);
+
+            // 兜底：扫描场景里这些 key 对应的 HandMapTile_* 孤儿清理
+            CleanOrphanedPreviews(-1);
 
             // 清理选区
             ClearSelection();
@@ -1709,6 +1922,12 @@ namespace Mvp.Editor.HandMapBuilder
             _state = _state == BuilderState.ReadyToCopy ? BuilderState.Idle : _state;
             _boxSelStart = new Vector2Int(-1, -1);
             _boxSelEnd = new Vector2Int(-1, -1);
+            // 框选和 Inspector 编辑模式共存时,Esc 一并清掉——简化状态机,避免两个"选中区"叠加。
+            if (_selectedTileForEdit.HasValue)
+            {
+                _selectedTileForEdit = null;
+                // _state 已被上面设回 Idle
+            }
             Repaint();
             _sv?.Repaint();
         }
@@ -1805,8 +2024,10 @@ namespace Mvp.Editor.HandMapBuilder
             {
                 var tile = _mapData.Tiles[i];
                 if (tile.Z != z) continue;
-                if (string.IsNullOrEmpty(tile.PrefabPath)) continue;
-                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(tile.PrefabPath);
+                // 优先用序列化字段 Prefab（避免每次都 AssetDatabase.LoadAssetAtPath）
+                var prefab = tile.Prefab;
+                if (prefab == null && !string.IsNullOrEmpty(tile.PrefabPath))
+                    prefab = AssetDatabase.LoadAssetAtPath<GameObject>(tile.PrefabPath);
                 if (prefab == null) continue;
                 EnsurePreviewFor(new Vector3Int(tile.X, tile.Y, tile.Z), prefab);
             }
@@ -1895,8 +2116,15 @@ namespace Mvp.Editor.HandMapBuilder
             }
 
             Undo.RecordObject(_mapData, "放置地块");
-            // 同格同 Z 已有则替换
-            _mapData.RemoveTile(cell.x, cell.y, cell.z);
+            // 同格同 Z 已有则替换：先删数据 + 旧 preview,再加新数据 + 新 preview,
+            // 否则会出现"两个 prefab 重叠在同一格"的视觉假象(用户感觉"替换不上")。
+            if (_mapData.RemoveTile(cell.x, cell.y, cell.z))
+            {
+                var keyOld = new Vector3Int(cell.x, cell.y, cell.z);
+                if (_spawnedByCell.TryGetValue(keyOld, out var goOld) && goOld != null)
+                    Undo.DestroyObjectImmediate(goOld);
+                _spawnedByCell.Remove(keyOld);
+            }
             _mapData.Tiles.Add(new HandPlacedTile
             {
                 X = cell.x,
@@ -1916,20 +2144,22 @@ namespace Mvp.Editor.HandMapBuilder
         void EraseAt(Vector2Int cell)
         {
             Undo.RecordObject(_mapData, "擦除地块");
-            bool removed = false;
-            // 删除当前激活 Z 的 tile
-            if (_mapData.RemoveTile(cell.x, cell.y, _activeZ))
+            // Older assets can contain duplicate entries at one cell/Z. Removing
+            // only the first entry makes the terrain appear impossible to delete.
+            int removedCount = _mapData.Tiles.RemoveAll(t =>
+                t.X == cell.x && t.Y == cell.y && t.Z == _activeZ);
+            if (removedCount > 0)
             {
                 EditorUtility.SetDirty(_mapData);
-                removed = true;
             }
             var key = new Vector3Int(cell.x, cell.y, _activeZ);
             if (_spawnedByCell.TryGetValue(key, out var go) && go != null)
             {
                 Undo.DestroyObjectImmediate(go);
-                _spawnedByCell.Remove(key);
             }
-            if (!removed)
+            _spawnedByCell.Remove(key);
+            DestroyPreviewObjectsAt(cell.x, cell.y, _activeZ);
+            if (removedCount == 0)
             {
                 Debug.Log($"[HandMapBuilder] ({cell.x}, {cell.y}, Z={_activeZ}) 没有放置物");
             }
@@ -1949,11 +2179,12 @@ namespace Mvp.Editor.HandMapBuilder
             {
                 if (kv.Key.z == zToRemove && kv.Value != null)
                 {
-                    DestroyImmediate(kv.Value);
+                    Undo.DestroyObjectImmediate(kv.Value);
                     keysToRemove.Add(kv.Key);
                 }
             }
             foreach (var k in keysToRemove) _spawnedByCell.Remove(k);
+            CleanOrphanedPreviews(zToRemove);
 
             _maxZInData--;
             // 用户主动保留的层级也跟着降
@@ -2011,7 +2242,7 @@ namespace Mvp.Editor.HandMapBuilder
                         var keyOld = new Vector3Int(x, y, _activeZ);
                         if (_spawnedByCell.TryGetValue(keyOld, out var goOld) && goOld != null)
                         {
-                            DestroyImmediate(goOld);
+                            Undo.DestroyObjectImmediate(goOld);
                             _spawnedByCell.Remove(keyOld);
                         }
                     }
@@ -2066,17 +2297,26 @@ namespace Mvp.Editor.HandMapBuilder
             EditorUtility.SetDirty(_mapData);
             InvalidateSelectionReferences();
 
-            // 销毁预览实例
+            // 销毁该层所有预览实例。
+            // ⚠️ 必须用 Undo.DestroyObjectImmediate 而不是裸 DestroyImmediate——
+            // 这些 instance 在 EnsurePreviewFor 里有 Undo.RegisterCreatedObjectUndo 注册过，
+            // 裸 Destroy 会让 Undo 系统的记录与场景状态不一致（极端场景下 Undo 重做会把 instance 复活）。
+            // Undo.DestroyObjectImmediate 让 Undo 系统也记录这次销毁，整体一致。
             var keysToRemove = new List<Vector3Int>();
             foreach (var kv in _spawnedByCell)
             {
                 if (kv.Key.z == _activeZ && kv.Value != null)
                 {
-                    DestroyImmediate(kv.Value);
+                    Undo.DestroyObjectImmediate(kv.Value);
                     keysToRemove.Add(kv.Key);
                 }
             }
             foreach (var k in keysToRemove) _spawnedByCell.Remove(k);
+
+            // 兜底：上一步的 Destroy 基于 _spawnedByCell 字典，但若字典里没记录到这些 instance
+            // (域重载/外部脚本/Undo redo 复活等极端情况),会残留孤儿。下面用命名约定扫一遍场景,把任何
+            // 不在数据里的 HandMapTile_* 视为孤儿一并清理。这是 user 报告"清空层级还残留地形"的根因保险。
+            CleanOrphanedPreviews(_activeZ);
             Undo.CollapseUndoOperations(undoGroup);
 
             // 更新 _maxZInData（保留用户主动保留的层级）
@@ -2109,17 +2349,20 @@ namespace Mvp.Editor.HandMapBuilder
             EditorUtility.SetDirty(_mapData);
             InvalidateSelectionReferences(); // 清空后所有 tile 索引失效，清掉避免 SceneView 重绘抛异常
 
-            // 销毁所有预览实例
+            // 销毁所有预览实例（同 ClearLevel：走 Undo 通道避免 Undo redo 复活）
             var keysToRemove = new List<Vector3Int>();
             foreach (var kv in _spawnedByCell)
             {
                 if (kv.Value != null)
                 {
-                    DestroyImmediate(kv.Value);
+                    Undo.DestroyObjectImmediate(kv.Value);
                     keysToRemove.Add(kv.Key);
                 }
             }
             foreach (var k in keysToRemove) _spawnedByCell.Remove(k);
+
+            // 兜底：扫描场景里所有 HandMapTile_* 孤儿，一并清理
+            CleanOrphanedPreviews(-1);
             Undo.CollapseUndoOperations(undoGroup);
 
             _maxZInData = 0;
@@ -2127,6 +2370,58 @@ namespace Mvp.Editor.HandMapBuilder
             _userReservedMaxZ = 0;  // 清空所有数据时同时清空用户保留的层级
             _sv?.Repaint();
             Debug.Log($"[HandMapBuilder] 已清空所有层级: 删除 {removedCount} 个 tile");
+        }
+
+        /// <summary>
+        /// 扫场景里所有名字为 HandMapTile_X_Y_Z 的 GameObject,如果它对应的 cell 不在 _mapData.Tiles 里
+        /// 就视为孤儿删掉。这是"清空层级还残留地形"这种顽固 bug 的兜底修复,跟 _spawnedByCell 字典无关。
+        /// <para/>zFilter&lt;0 表示不限层;zFilter&gt;=0 表示只清该层。
+        /// </summary>
+        void CleanOrphanedPreviews(int zFilter)
+        {
+            if (_mapData == null) return;
+            // 收集当前数据应有的 cell
+            var validCells = new HashSet<long>();
+            for (int i = 0; i < _mapData.Tiles.Count; i++)
+            {
+                var t = _mapData.Tiles[i];
+                if (zFilter >= 0 && t.Z != zFilter) continue;
+                long k = ((long)t.X << 40) | ((long)t.Y << 20) | (uint)t.Z;
+                validCells.Add(k);
+            }
+
+            // 用 SceneView 的 root 或 active scene 找所有 HandMapTile_* (它们不在层级中,只在 SceneView 里出现——
+            // 但 Unity 实例化的 GameObject 会在当前场景的 hierarchy 里)
+            var candidates = Resources.FindObjectsOfTypeAll<GameObject>();
+            int cleaned = 0;
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var go = candidates[i];
+                if (go == null) continue;
+                if (!go.name.StartsWith("HandMapTile_")) continue;
+                // 跳过 asset (如 prefab asset 自身) —— 只清场景中实例
+                if (EditorUtility.IsPersistent(go)) continue;
+                // 解析名字尾段 'HandMapTile_X_Y_Z{n}'
+                int zStart = go.name.LastIndexOf('_');
+                if (zStart < 0) continue;
+                if (!int.TryParse(go.name.Substring(zStart + 2), out int z)) continue;  // 跳 'Z'
+                int yStart = go.name.LastIndexOf('_', zStart - 1);
+                if (yStart < 0) continue;
+                if (!int.TryParse(go.name.Substring(yStart + 1, zStart - yStart - 1), out int y)) continue;
+                int xStart = "HandMapTile_".Length;
+                int xEnd = go.name.IndexOf('_', xStart);
+                if (xEnd < 0) continue;
+                if (!int.TryParse(go.name.Substring(xStart, xEnd - xStart), out int x)) continue;
+
+                if (zFilter >= 0 && z != zFilter) continue;
+                long k = ((long)x << 40) | ((long)y << 20) | (uint)z;
+                if (validCells.Contains(k)) continue;  // 数据里有,合法
+
+                Undo.DestroyObjectImmediate(go);
+                cleaned++;
+            }
+            if (cleaned > 0)
+                Debug.Log($"[HandMapBuilder] 兜底清理: 删除 {cleaned} 个孤儿 preview (zFilter={zFilter})");
         }
 
         void EnsurePreviewFor(Vector3Int cell, GameObject prefab, bool registerUndo = true)
@@ -2137,18 +2432,24 @@ namespace Mvp.Editor.HandMapBuilder
                 DestroyImmediate(existing);
                 _spawnedByCell.Remove(key);
             }
-            // 从数据源读取该格的 rotation 和 height offset（而不是全局当前值）
+            // 从数据源读取该格的 rotation / height offset / 水平偏移（而不是全局当前值）
             // 因为 FillLevel 后需要重建预览、要忠实反映实际数据
             float rotY = _currentRotationY;
             float hOff = _currentHeightOffset;
+            float offX = 0f, offY = 0f;
             var t = _mapData?.FindTile(cell.x, cell.y, cell.z);
             if (t != null)
             {
                 rotY = t.Value.RotationY;
                 hOff = t.Value.HeightOffset;
+                offX = t.Value.OffsetX;
+                offY = t.Value.OffsetY;
             }
 
             Vector3 world = GridToWorld(cell.x + 0.5f, cell.y + 0.5f, cell.z * 1f);
+            // 应用 tile 上的水平偏移:OffsetX 走世界 X,OffsetY 走世界 Z(因为网格 y 映射到世界 z 轴)
+            world.x += offX;
+            world.z += offY;
             world.y += hOff;
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             if (instance == null) return;
@@ -2156,7 +2457,9 @@ namespace Mvp.Editor.HandMapBuilder
             instance.transform.rotation = Quaternion.Euler(0f, rotY, 0f);
             instance.transform.localScale = Vector3.one * 0.5f;
             instance.name = $"HandMapTile_{cell.x}_{cell.y}_Z{cell.z}";
-            instance.hideFlags = HideFlags.DontSaveInEditor;
+            // Preview objects are editor-only transient state. HideAndDontSave also
+            // protects the scene if Unity closes/reloads the window unexpectedly.
+            instance.hideFlags = HideFlags.HideAndDontSave;
             var cols = instance.GetComponentsInChildren<Collider>();
             for (int i = 0; i < cols.Length; i++)
             {
@@ -2188,6 +2491,74 @@ namespace Mvp.Editor.HandMapBuilder
                 if (kv.Value != null) DestroyImmediate(kv.Value);
             }
             _spawnedByCell.Clear();
+        }
+
+        /// <summary>关闭工具时清理所有地图预览，包括字典因域重载而遗失的对象。</summary>
+        void ClearAllPreviewObjects()
+        {
+            ClearSpawnedPreview();
+            var candidates = Resources.FindObjectsOfTypeAll<GameObject>();
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var go = candidates[i];
+                if (go == null || EditorUtility.IsPersistent(go)) continue;
+                if (!go.name.StartsWith("HandMapTile_")) continue;
+                DestroyImmediate(go);
+            }
+        }
+
+        /// <summary>删除指定格/Z 的全部预览，兼容旧版本留下的重复或孤儿实例。</summary>
+        void DestroyPreviewObjectsAt(int x, int y, int z)
+        {
+            string expectedName = $"HandMapTile_{x}_{y}_Z{z}";
+            var candidates = Resources.FindObjectsOfTypeAll<GameObject>();
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var go = candidates[i];
+                if (go == null || EditorUtility.IsPersistent(go)) continue;
+                if (go.name != expectedName) continue;
+                Undo.DestroyObjectImmediate(go);
+            }
+        }
+
+        /// <summary>统计"孤儿 preview"数量:场景里有 HandMapTile_*,但 _mapData.Tiles 里没有对应 cell。
+        /// 用于按钮文字显示,以及手动触发 CleanOrphanedPreviews 前让用户有数。</summary>
+        int CountOrphanedPreviews(int zFilter)
+        {
+            if (_mapData == null) return 0;
+            var validCells = new HashSet<long>();
+            for (int i = 0; i < _mapData.Tiles.Count; i++)
+            {
+                var t = _mapData.Tiles[i];
+                if (zFilter >= 0 && t.Z != zFilter) continue;
+                long k = ((long)t.X << 40) | ((long)t.Y << 20) | (uint)t.Z;
+                validCells.Add(k);
+            }
+            var candidates = Resources.FindObjectsOfTypeAll<GameObject>();
+            int count = 0;
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var go = candidates[i];
+                if (go == null) continue;
+                if (!go.name.StartsWith("HandMapTile_")) continue;
+                if (EditorUtility.IsPersistent(go)) continue;
+                int zStart = go.name.LastIndexOf('_');
+                if (zStart < 0) continue;
+                if (!int.TryParse(go.name.Substring(zStart + 2), out int z)) continue;
+                int yStart = go.name.LastIndexOf('_', zStart - 1);
+                if (yStart < 0) continue;
+                if (!int.TryParse(go.name.Substring(yStart + 1, zStart - yStart - 1), out int y)) continue;
+                int xStart = "HandMapTile_".Length;
+                int xEnd = go.name.IndexOf('_', xStart);
+                if (xEnd < 0) continue;
+                if (!int.TryParse(go.name.Substring(xStart, xEnd - xStart), out int x)) continue;
+
+                if (zFilter >= 0 && z != zFilter) continue;
+                long k = ((long)x << 40) | ((long)y << 20) | (uint)z;
+                if (validCells.Contains(k)) continue;
+                count++;
+            }
+            return count;
         }
 
         int CountTilesAtCellZ(Vector2Int cell, int z)
@@ -2252,8 +2623,12 @@ namespace Mvp.Editor.HandMapBuilder
         Vector3 MouseToWorld(Vector2 mousePos, int z)
         {
             var ray = HandleUtility.GUIPointToWorldRay(mousePos);
-            // 用激活层所在 Y 平面试射线
-            Plane plane = new Plane(Vector3.up, new Vector3(0, -z, 0));
+            // 用激活层所在 Y 平面试射线,跟 GridToWorld(x, y, z) = (x, z*scale, y) 保持一致。
+            // 之前写 (-z) 当成 plane point 错了一个方向:Unity Plane(normal, point) 等价于 normal·X + dot(normal, point) = 0;
+            // 所以想要 plane = "y = z*scale",需要 point = (0, z*scale, 0) (不是 -)。
+            // 当 _layerHeightScale = 1 时 Z=1 平面在 y=+1,旧代码把 plane 设在 y=-1 → 鼠标射线穿过的是错的 Y,
+            // 导致 Z>=1 时定位偏移 1~2 格 (在 LayerHeightScale 不同的情况下偏差更大)。
+            Plane plane = new Plane(Vector3.up, new Vector3(0f, z * _layerHeightScale, 0f));
             if (plane.Raycast(ray, out float enter))
             {
                 return ray.GetPoint(enter);
@@ -2406,6 +2781,9 @@ namespace Mvp.Editor.HandMapBuilder
             if (tile != null)
             {
                 _selectedTileForEdit = tile;
+                // 选中后进入 InspectingTile 状态：避免左键拖动时误触 PlaceAt/框选
+                // Esc 退回 Idle（见 HandleSceneEvents + 快捷键段）
+                _state = BuilderState.InspectingTile;
                 Repaint();
                 Debug.Log($"[HandMapBuilder] 选中 tile: ({tile.Value.X}, {tile.Value.Y}, Z={tile.Value.Z}) " +
                           $"hOff={tile.Value.HeightOffset:F2}");

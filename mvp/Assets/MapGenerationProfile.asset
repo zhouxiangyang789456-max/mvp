@@ -16,5 +16,5 @@ MonoBehaviour:
   ProfileVersion: 1
   GeneratorVersion: 2
   ProfileSalt: 1432795496
-  HandMapOverride: {fileID: 11400000, guid: f0cf24a0faa236c4aa231b7cf1f44502, type: 2}
+  HandMapOverride: {fileID: 11400000, guid: 2e7402f8ce7443642a24b9ae191859a5, type: 2}
   Rules: []

@@ -1,4 +1,5 @@
 using UnityEngine;
+using Mvp.Battle.Map.Generation;
 
 namespace Mvp.Battle.Map
 {
@@ -40,18 +41,54 @@ namespace Mvp.Battle.Map
                 instance.transform.position += Vector3.up * entry.GroundOffset;
         }
 
-        public static void PrepareHandAuthored(GameObject instance, float scale)
+        public static void PrepareHandAuthored(GameObject instance, float scale,
+            HandTileCategory category)
         {
+            bool tangible = IsTangible(category);
             foreach (var node in instance.GetComponentsInChildren<Transform>(true))
-                node.gameObject.layer = 2;
+                node.gameObject.layer = tangible ? 0 : 2;
             foreach (var collider in instance.GetComponentsInChildren<Collider>(true))
-                collider.enabled = false;
+                collider.enabled = tangible;
             foreach (var body in instance.GetComponentsInChildren<Rigidbody>(true))
             {
                 body.isKinematic = true;
-                body.detectCollisions = false;
+                body.detectCollisions = tangible;
             }
             instance.transform.localScale = Vector3.one * Mathf.Max(0.001f, scale);
+
+            // Imported terrain prefabs are inconsistent: many have visuals but no
+            // collider. Add one conservative static box so solid terrain also has a
+            // physical body for projectiles and safety checks. Grid traversal remains
+            // the authoritative rule for unit movement.
+            if (tangible && instance.GetComponentInChildren<Collider>(true) == null &&
+                TryGetRendererBounds(instance, out var bounds))
+            {
+                var box = instance.AddComponent<BoxCollider>();
+                box.center = instance.transform.InverseTransformPoint(bounds.center);
+                var s = instance.transform.lossyScale;
+                box.size = new Vector3(
+                    bounds.size.x / Mathf.Max(0.001f, Mathf.Abs(s.x)),
+                    bounds.size.y / Mathf.Max(0.001f, Mathf.Abs(s.y)),
+                    bounds.size.z / Mathf.Max(0.001f, Mathf.Abs(s.z)));
+            }
+        }
+
+        static bool IsTangible(HandTileCategory category)
+        {
+            switch (category)
+            {
+                case HandTileCategory.Base:
+                case HandTileCategory.Path:
+                case HandTileCategory.Ramp:
+                case HandTileCategory.Bridge:
+                case HandTileCategory.Mountain:
+                case HandTileCategory.Building:
+                case HandTileCategory.Decoration:
+                    return true;
+                // Forest is deliberately pass-through: tree trunks must not stop units.
+                default:
+                    return false;
+            }
         }
     }
 }
