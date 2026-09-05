@@ -8,7 +8,7 @@ namespace Mvp.Battle.Units
     /// toggles the capture flag. Lives on the infantry model prefab (child of the
     /// UnitView's ModelRoot) so it only runs for real 3D units, not placeholders.
     ///
-    /// State mapping (matches the controller built by InfantryAssetSetup):
+    /// State mapping used by the infantry AnimatorController:
     ///   Idle/Deploying  -> "Idle"   (clip Idle)
     ///   Moving/Chasing  -> "Move"   (clip Move)
     ///   Attacking       -> "Attack" (clip Attack)
@@ -24,7 +24,7 @@ namespace Mvp.Battle.Units
         bool _simpleMilitary;
         float _oneShotUntil;
 
-        /// <summary>Resources path of the AnimatorController built by InfantryAssetSetup.</summary>
+        /// <summary>Resources path of the infantry AnimatorController asset.</summary>
         const string ControllerResource = "Battle/Units/InfantryAnimator";
 
         public void Initialize(UnitView unit)
